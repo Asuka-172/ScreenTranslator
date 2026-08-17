@@ -18,12 +18,14 @@ set(SOURCES
     ScreenTranslator.cpp
     CaptureOverlay.cpp
     TranslationService.cpp
+    DocxExporter.cpp
 )
 
 set(HEADERS
     ScreenTranslator.h
     CaptureOverlay.h
     TranslationService.h
+    DocxExporter.h
 )
 
 add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${HEADERS} "CaptureOverlay.h" "TranslationService.h" "TranslationService.cpp")

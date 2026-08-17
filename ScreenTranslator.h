@@ -45,6 +45,7 @@ private slots:
     void clearHistory();
     void copyLastRecord();
     void copyAllRecords();
+    void exportRecords();
     void onTranslationFinished(const QString& translatedText, const QString& detectedLang);
     void onTranslationError(const QString& errorMessage);
     void showLanguageDialog();

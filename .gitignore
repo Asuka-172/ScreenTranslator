@@ -36,5 +36,6 @@ qrc_*.cpp
 # IDE
 .idea/
 .vscode/
+.claude/
 *.user
 *.suo

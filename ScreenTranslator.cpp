@@ -18,7 +18,11 @@
 #include <QClipboard>
 #include <QApplication>
 #include <future>
+#include <QFileDialog>
+#include <QMessageBox>
+#include <QFileInfo>
 #include <opencv2/imgproc.hpp>
+#include "DocxExporter.h"
 
 ScreenTranslator::ScreenTranslator(QWidget* parent)
     : QWidget(parent),
@@ -96,6 +100,8 @@ void ScreenTranslator::initUI()
     connect(copyLastAct, &QAction::triggered, this, &ScreenTranslator::copyLastRecord);
     QAction* copyAllAct = contextMenu->addAction("复制全部记录");
     connect(copyAllAct, &QAction::triggered, this, &ScreenTranslator::copyAllRecords);
+    QAction* exportAct = contextMenu->addAction("导出记录");
+    connect(exportAct, &QAction::triggered, this, &ScreenTranslator::exportRecords);
     contextMenu->addSeparator();
     QAction* clearAct = contextMenu->addAction("清空记录");
     connect(clearAct, &QAction::triggered, this, &ScreenTranslator::clearHistory);
@@ -133,6 +139,46 @@ void ScreenTranslator::copyLastRecord()
 void ScreenTranslator::copyAllRecords()
 {
     QApplication::clipboard()->setText(historyList.join("\n"));
+}
+
+void ScreenTranslator::exportRecords()
+{
+    if (historyList.isEmpty()) {
+        QMessageBox::information(this, "导出记录", "当前没有可导出的记录。");
+        return;
+    }
+
+    QString defaultName = "translations_" + QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
+    QString filter = "文本文件 (*.txt);;Word 文档 (*.docx)";
+    QString selectedFilter;
+    QString filePath = QFileDialog::getSaveFileName(this, "导出记录", defaultName, filter, &selectedFilter);
+    if (filePath.isEmpty())
+        return;
+
+    const bool wantDocx = selectedFilter.contains("docx");
+    if (!QFileInfo(filePath).suffix().isEmpty()) {
+        // 已有扩展名，尊重用户输入
+    } else if (wantDocx) {
+        filePath += ".docx";
+    } else {
+        filePath += ".txt";
+    }
+
+    bool ok = false;
+    if (filePath.endsWith(".docx", Qt::CaseInsensitive)) {
+        ok = DocxExporter::write(filePath, historyList);
+    } else {
+        QFile file(filePath);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+            ok = file.write(historyList.join("\n\n").toUtf8()) >= 0;
+            file.close();
+        }
+    }
+
+    if (ok)
+        QMessageBox::information(this, "导出记录", QString("已导出 %1 条记录到：\n%2").arg(historyList.size()).arg(filePath));
+    else
+        QMessageBox::warning(this, "导出记录", "导出失败，请检查路径或权限。");
 }
 
 void ScreenTranslator::contextMenuEvent(QContextMenuEvent* event)
