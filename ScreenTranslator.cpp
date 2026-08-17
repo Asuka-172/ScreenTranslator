@@ -22,7 +22,6 @@
 #include <QMessageBox>
 #include <QFileInfo>
 #include <QDir>
-#include <QCursor>
 #include <opencv2/imgproc.hpp>
 #include "DocxExporter.h"
 #include "AppConfig.h"
@@ -31,8 +30,6 @@
 #include "TextToSpeech.h"
 #include "GlobalHotkey.h"
 #include "TranslationService.h"
-#include "DictionaryService.h"
-#include "DictionaryPopup.h"
 #include "PluginManager.h"
 #include "PluginTranslator.h"
 
@@ -71,15 +68,6 @@ ScreenTranslator::ScreenTranslator(QWidget* parent)
     tts = new TextToSpeech(this);
     tts->setRate(AppConfig::instance().ttsRate());
     tts->setVolume(AppConfig::instance().ttsVolume());
-
-    // 初始化词典查询
-    dictService = new DictionaryService(this);
-    connect(dictService, &DictionaryService::resultReady, this, [this](const QString& word, const QString& formatted) {
-        showDictionaryPopup(word, formatted, false);
-    });
-    connect(dictService, &DictionaryService::error, this, [this](const QString& message) {
-        showDictionaryPopup(QString(), message, true);
-    });
 
     // 初始化插件管理器并加载插件
     pluginManager = new PluginManager(this);
@@ -147,22 +135,6 @@ void ScreenTranslator::initUI()
     historyTextEdit->setAccessibleName("翻译历史记录");
     historyTextEdit->setFrameShape(QFrame::NoFrame);
     layout->addWidget(historyTextEdit, 1);
-
-    // 划词查询右键菜单
-    historyTextEdit->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(historyTextEdit, &QTextEdit::customContextMenuRequested, this, [this](const QPoint& pos) {
-        QMenu menu(historyTextEdit);
-        QAction* lookupAct = menu.addAction("查询释义");
-        QAction* copyAct = menu.addAction("复制");
-        QAction* selected = menu.exec(historyTextEdit->mapToGlobal(pos));
-        if (selected == lookupAct) {
-            const QString word = historyTextEdit->textCursor().selectedText().trimmed();
-            if (!word.isEmpty() && AppConfig::instance().dictEnabled())
-                lookupWord(word);
-        } else if (selected == copyAct) {
-            historyTextEdit->copy();
-        }
-    });
 
     // ---- 底部导出按钮（右下角） ----
     exportBtn = new QPushButton("导出记录", this);
@@ -283,28 +255,6 @@ void ScreenTranslator::registerOneHotkey(int id, const QString& action, const QS
         seqStr = def;
     if (!seqStr.isEmpty())
         hotkey->registerHotkey(id, QKeySequence(seqStr));
-}
-
-void ScreenTranslator::lookupWord(const QString& word)
-{
-    if (dictService)
-        dictService->lookup(word);
-}
-
-void ScreenTranslator::showDictionaryPopup(const QString& word, const QString& text, bool isError)
-{
-    if (!dictPopup) {
-        dictPopup = new DictionaryPopup();
-        connect(dictPopup, &DictionaryPopup::speakRequested, this, [this](const QString& w) {
-            if (tts) tts->speak(w);
-        });
-    }
-    if (isError)
-        dictPopup->showError(text);
-    else
-        dictPopup->showResult(word, text);
-    dictPopup->move(QCursor::pos());
-    dictPopup->show();
 }
 
 void ScreenTranslator::switchTranslator(const QString& engineId)

@@ -35,10 +35,6 @@ public:
     int ttsVolume() const;                 // 0-100
     void setTtsVolume(int v);
 
-    // 词典
-    bool dictEnabled() const;
-    void setDictEnabled(bool e);
-
     // 翻译与导出
     QString translatorEngine() const;      // "google" 或插件 id
     void setTranslatorEngine(const QString& e);

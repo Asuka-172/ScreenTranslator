@@ -41,7 +41,6 @@ void AppConfig::ensureDefaults()
     setDefault("ttsEnabled", false);
     setDefault("ttsRate", 1.0);
     setDefault("ttsVolume", 80);
-    setDefault("dictEnabled", true);
     setDefault("translatorEngine", "google");
     setDefault("exportFormat", "txt");
 }
@@ -80,9 +79,6 @@ void AppConfig::setTtsRate(double r) { setValue("ttsRate", r); }
 
 int AppConfig::ttsVolume() const { return m_settings.value("ttsVolume", 80).toInt(); }
 void AppConfig::setTtsVolume(int v) { setValue("ttsVolume", v); }
-
-bool AppConfig::dictEnabled() const { return m_settings.value("dictEnabled", true).toBool(); }
-void AppConfig::setDictEnabled(bool e) { setValue("dictEnabled", e); }
 
 QString AppConfig::translatorEngine() const { return m_settings.value("translatorEngine", "google").toString(); }
 void AppConfig::setTranslatorEngine(const QString& e) { setValue("translatorEngine", e); }

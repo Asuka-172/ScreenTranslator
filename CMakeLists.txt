@@ -23,8 +23,6 @@ set(SOURCES
     SettingsDialog.cpp
     TextToSpeech.cpp
     GlobalHotkey.cpp
-    DictionaryService.cpp
-    DictionaryPopup.cpp
     PluginManager.cpp
     PluginTranslator.cpp
 )
@@ -40,8 +38,6 @@ set(HEADERS
     SettingsDialog.h
     TextToSpeech.h
     GlobalHotkey.h
-    DictionaryService.h
-    DictionaryPopup.h
     PluginManager.h
     PluginTranslator.h
     IPlugin.h

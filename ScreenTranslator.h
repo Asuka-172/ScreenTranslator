@@ -25,8 +25,6 @@
 class ITranslator;
 class TranslationService;
 class PluginTranslator;
-class DictionaryService;
-class DictionaryPopup;
 class PluginManager;
 class TextToSpeech;
 class GlobalHotkey;
@@ -67,8 +65,6 @@ private:
     void onConfigChanged(const QString& key);
     void registerHotkeys();
     void registerOneHotkey(int id, const QString& action, const QString& def);
-    void lookupWord(const QString& word);
-    void showDictionaryPopup(const QString& word, const QString& text, bool isError);
     void switchTranslator(const QString& engineId);
     void loadPlugins();
     void preprocessImage(const cv::Mat& src, cv::Mat& dst);
@@ -108,10 +104,6 @@ private:
     ITranslator* translator;
     TranslationService* googleTranslator;
     QHash<QString, PluginTranslator*> m_pluginTranslators;
-
-    // 词典查询
-    DictionaryService* dictService;
-    DictionaryPopup* dictPopup;
 
     // 插件管理
     PluginManager* pluginManager;

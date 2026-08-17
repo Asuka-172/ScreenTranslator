@@ -250,15 +250,6 @@ QWidget* SettingsDialog::createTranslationPage()
     });
     engineForm->addRow("引擎", m_engineCombo);
 
-    QGroupBox* dictGroup = new QGroupBox("划词查询", page);
-    QFormLayout* dictForm = new QFormLayout(dictGroup);
-    QCheckBox* dictCheck = new QCheckBox("启用划词查询", dictGroup);
-    dictCheck->setChecked(AppConfig::instance().dictEnabled());
-    connect(dictCheck, &QCheckBox::toggled, dictCheck, [](bool on) {
-        AppConfig::instance().setDictEnabled(on);
-    });
-    dictForm->addRow(dictCheck);
-
     QGroupBox* exportGroup = new QGroupBox("历史导出格式", page);
     QFormLayout* exportForm = new QFormLayout(exportGroup);
     QComboBox* exportCombo = new QComboBox(exportGroup);
@@ -274,7 +265,6 @@ QWidget* SettingsDialog::createTranslationPage()
     exportForm->addRow("格式", exportCombo);
 
     lay->addWidget(engineGroup);
-    lay->addWidget(dictGroup);
     lay->addWidget(exportGroup);
     lay->addStretch();
     return page;
