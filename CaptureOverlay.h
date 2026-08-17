@@ -13,7 +13,7 @@ public:
     ~CaptureOverlay();
 
 signals:
-    void regionSelected(const QRect& rect);   // 选区完成信号
+    void regionSelected(const QRect& rect);   // 閫夊尯瀹屾垚淇″彿
 
 protected:
     void paintEvent(QPaintEvent* event) override;

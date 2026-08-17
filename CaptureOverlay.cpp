@@ -2,7 +2,7 @@
 #include <QPainter>
 #include <QMouseEvent>
 #include <QKeyEvent>
-#include <QShowEvent>            // ¼ÇµÃ°üº¬
+#include <QShowEvent>            // è®°å¾—åŒ…å«
 #include <QGuiApplication>
 #include <QScreen>
 
@@ -22,7 +22,7 @@ CaptureOverlay::~CaptureOverlay() {}
 
 void CaptureOverlay::showEvent(QShowEvent* event)
 {
-    // Ã¿´ÎÏÔÊ¾ÕÚÕÖÊ±£¬Çå¿Õ¾ÉÑ¡Çø£¬ÖØÖÃ×´Ì¬
+    // æ¯æ¬¡æ˜¾ç¤ºé®ç½©æ—¶ï¼Œæ¸…ç©ºæ—§é€‰åŒºï¼Œé‡ç½®çŠ¶æ€
     selecting = false;
     selectedRect = QRect();
     QWidget::showEvent(event);
@@ -31,12 +31,12 @@ void CaptureOverlay::showEvent(QShowEvent* event)
 void CaptureOverlay::paintEvent(QPaintEvent*)
 {
     QPainter painter(this);
-    // °ëÍ¸Ã÷ºÚÉ«ÕÚÕÖ
+    // åŠé€æ˜é»‘è‰²é®ç½©
     painter.fillRect(rect(), QColor(0, 0, 0, 80));
 
     if (selecting || !selectedRect.isNull()) {
         QRect r = selectedRect.normalized();
-        // Ñ¡ÇøïÎ¿Õ
+        // é€‰åŒºé•‚ç©º
         painter.setCompositionMode(QPainter::CompositionMode_Clear);
         painter.fillRect(r, Qt::transparent);
         painter.setCompositionMode(QPainter::CompositionMode_SourceOver);

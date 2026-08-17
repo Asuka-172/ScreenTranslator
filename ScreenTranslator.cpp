@@ -21,8 +21,33 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QFileInfo>
+#include <QDir>
+#include <QCursor>
 #include <opencv2/imgproc.hpp>
 #include "DocxExporter.h"
+#include "AppConfig.h"
+#include "ThemeManager.h"
+#include "SettingsDialog.h"
+#include "TextToSpeech.h"
+#include "GlobalHotkey.h"
+#include "TranslationService.h"
+#include "DictionaryService.h"
+#include "DictionaryPopup.h"
+#include "PluginManager.h"
+#include "PluginTranslator.h"
+
+namespace {
+
+// 全局热键动作 ID
+enum HotkeyAction {
+    ActCapture = 1,
+    ActLanguage = 2,
+    ActSettings = 3,
+    ActToggleWindow = 4,
+    ActSpeakLast = 5,
+};
+
+} // namespace
 
 ScreenTranslator::ScreenTranslator(QWidget* parent)
     : QWidget(parent),
@@ -36,15 +61,53 @@ ScreenTranslator::ScreenTranslator(QWidget* parent)
         qWarning() << "Could not initialize tesseract.";
     }
 
-    // 初始化翻译服务
-    translator = new TranslationService(this);
-    connect(translator, &TranslationService::translationFinished, this, &ScreenTranslator::onTranslationFinished);
-    connect(translator, &TranslationService::translationError, this, &ScreenTranslator::onTranslationError);
+    // 初始化翻译引擎（内置 Google）
+    googleTranslator = new TranslationService(this);
+    translator = googleTranslator;
+    connect(translator, &ITranslator::finished, this, &ScreenTranslator::onTranslationFinished);
+    connect(translator, &ITranslator::error, this, &ScreenTranslator::onTranslationError);
+
+    // 初始化 TTS
+    tts = new TextToSpeech(this);
+    tts->setRate(AppConfig::instance().ttsRate());
+    tts->setVolume(AppConfig::instance().ttsVolume());
+
+    // 初始化词典查询
+    dictService = new DictionaryService(this);
+    connect(dictService, &DictionaryService::resultReady, this, [this](const QString& word, const QString& formatted) {
+        showDictionaryPopup(word, formatted, false);
+    });
+    connect(dictService, &DictionaryService::error, this, [this](const QString& message) {
+        showDictionaryPopup(QString(), message, true);
+    });
+
+    // 初始化插件管理器并加载插件
+    pluginManager = new PluginManager(this);
+    loadPlugins();
 
     initUI();
 
     overlay = new CaptureOverlay();
     connect(overlay, &CaptureOverlay::regionSelected, this, &ScreenTranslator::onRegionSelected);
+
+    // 配置变化时应用主题/字体/透明度
+    connect(&AppConfig::instance(), &AppConfig::changed, this, &ScreenTranslator::onConfigChanged);
+    applyTheme();
+
+    // 初始化全局热键
+    hotkey = new GlobalHotkey(this);
+    qApp->installNativeEventFilter(hotkey);
+    connect(hotkey, &GlobalHotkey::activated, this, [this](int id) {
+        switch (id) {
+        case ActCapture:      startCapture(); break;
+        case ActLanguage:     showLanguageDialog(); break;
+        case ActSettings:     openSettings(); break;
+        case ActToggleWindow: if (isVisible()) hide(); else show(); break;
+        case ActSpeakLast:    if (tts && !m_lastTranslated.isEmpty()) tts->speak(m_lastTranslated); break;
+        default: break;
+        }
+    });
+    registerHotkeys();
 }
 
 ScreenTranslator::~ScreenTranslator()
@@ -57,18 +120,16 @@ void ScreenTranslator::initUI()
 {
     setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     setAttribute(Qt::WA_TranslucentBackground);
+    setObjectName("MainWindow");
     setFixedSize(320, 700);
 
     QVBoxLayout* layout = new QVBoxLayout(this);
     layout->setContentsMargins(10, 10, 10, 10);
 
     closeBtn = new QPushButton("✕", this);
+    closeBtn->setObjectName("CloseButton");
+    closeBtn->setAccessibleName("关闭");
     closeBtn->setFixedSize(24, 24);
-    closeBtn->setStyleSheet(
-        "QPushButton { background: rgba(255,255,255,0.7); border-radius: 12px; "
-        "border: none; color: black; font-weight: bold; font-size: 14px; }"
-        "QPushButton:hover { background: rgba(255,0,0,180); color: white; }"
-    );
     connect(closeBtn, &QPushButton::clicked, this, &ScreenTranslator::closeWindow);
 
     QHBoxLayout* topLayout = new QHBoxLayout();
@@ -77,32 +138,36 @@ void ScreenTranslator::initUI()
     topLayout->setContentsMargins(0, 0, 0, 0);
     layout->addLayout(topLayout);
 
-    QLabel* hint = new QLabel("按 F1 截图 | F2 语言设置 | 右键菜单更多", this);
+    QLabel* hint = new QLabel("按 F1 截图 | F2 语言 | F4 设置 | 右键菜单更多", this);
     hint->setAlignment(Qt::AlignCenter);
-    hint->setStyleSheet("color: rgba(255,255,255,180); font-size: 11px;");
     layout->addWidget(hint);
 
     historyTextEdit = new QTextEdit(this);
-    historyTextEdit->setReadOnly(true);            
+    historyTextEdit->setReadOnly(true);
+    historyTextEdit->setAccessibleName("翻译历史记录");
     historyTextEdit->setFrameShape(QFrame::NoFrame);
-    historyTextEdit->setStyleSheet(
-        "QTextEdit { color: white; font-size: 14px; background: rgba(0,0,0,120); "
-        "border-radius: 5px; padding: 8px; }"
-        "QScrollBar:vertical { background: transparent; width: 6px; }"
-        "QScrollBar::handle:vertical { background: rgba(255,255,255,80); border-radius: 3px; }"
-        "QScrollBar::add-line, QScrollBar::sub-line { height: 0px; }"
-    );
     layout->addWidget(historyTextEdit, 1);
+
+    // 划词查询右键菜单
+    historyTextEdit->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(historyTextEdit, &QTextEdit::customContextMenuRequested, this, [this](const QPoint& pos) {
+        QMenu menu(historyTextEdit);
+        QAction* lookupAct = menu.addAction("查询释义");
+        QAction* copyAct = menu.addAction("复制");
+        QAction* selected = menu.exec(historyTextEdit->mapToGlobal(pos));
+        if (selected == lookupAct) {
+            const QString word = historyTextEdit->textCursor().selectedText().trimmed();
+            if (!word.isEmpty() && AppConfig::instance().dictEnabled())
+                lookupWord(word);
+        } else if (selected == copyAct) {
+            historyTextEdit->copy();
+        }
+    });
 
     // ---- 底部导出按钮（右下角） ----
     exportBtn = new QPushButton("导出记录", this);
+    exportBtn->setAccessibleName("导出记录");
     exportBtn->setCursor(Qt::PointingHandCursor);
-    exportBtn->setStyleSheet(
-        "QPushButton { color: white; font-size: 14px; background: rgba(255,255,255,40); "
-        "border: 1px solid rgba(255,255,255,60); border-radius: 5px; padding: 6px 16px; }"
-        "QPushButton:hover { background: rgba(255,255,255,80); }"
-        "QPushButton:pressed { background: rgba(255,255,255,30); }"
-    );
     connect(exportBtn, &QPushButton::clicked, this, &ScreenTranslator::exportRecords);
 
     QHBoxLayout* bottomLayout = new QHBoxLayout();
@@ -118,6 +183,8 @@ void ScreenTranslator::initUI()
     QAction* copyAllAct = contextMenu->addAction("复制全部记录");
     connect(copyAllAct, &QAction::triggered, this, &ScreenTranslator::copyAllRecords);
     contextMenu->addSeparator();
+    QAction* settingsAct = contextMenu->addAction("设置");
+    connect(settingsAct, &QAction::triggered, this, &ScreenTranslator::openSettings);
     QAction* clearAct = contextMenu->addAction("清空记录");
     connect(clearAct, &QAction::triggered, this, &ScreenTranslator::clearHistory);
     QAction* exitAct = contextMenu->addAction("退出");
@@ -137,6 +204,151 @@ void ScreenTranslator::adjustToRightEdge()
 }
 
 void ScreenTranslator::closeWindow() { qApp->quit(); }
+
+void ScreenTranslator::openSettings()
+{
+    SettingsDialog dlg(this);
+    connect(&dlg, &SettingsDialog::testSpeechRequested, this, [this]() {
+        if (tts) tts->speak(QStringLiteral("你好，这是翻译朗读测试。"));
+    });
+
+    QStringList engineIds;
+    QStringList engineLabels;
+    engineIds << "google";
+    engineLabels << "Google";
+    for (ITranslatorPlugin* p : pluginManager->translatorPlugins()) {
+        engineIds << p->name();
+        engineLabels << p->name();
+    }
+    dlg.setEngines(engineIds, engineLabels, AppConfig::instance().translatorEngine());
+
+    QStringList pluginDescs;
+    for (IPlugin* p : pluginManager->plugins())
+        pluginDescs << QString("%1  v%2").arg(p->name(), p->version());
+    dlg.setPlugins(pluginDescs);
+
+    dlg.exec();
+}
+
+void ScreenTranslator::applyTheme()
+{
+    AppConfig& cfg = AppConfig::instance();
+
+    if (qApp)
+        ThemeManager::apply(*qApp, cfg.theme());
+
+    QFont f(cfg.fontFamily(), cfg.fontSize());
+    if (qApp)
+        qApp->setFont(f);
+
+    setWindowOpacity(cfg.windowOpacity() / 100.0);
+    update();
+}
+
+void ScreenTranslator::onConfigChanged(const QString& key)
+{
+    if (key == "theme" || key == "fontFamily" || key == "fontSize" || key == "windowOpacity") {
+        applyTheme();
+    }
+    else if (key == "ttsRate" && tts) {
+        tts->setRate(AppConfig::instance().ttsRate());
+    }
+    else if (key == "ttsVolume" && tts) {
+        tts->setVolume(AppConfig::instance().ttsVolume());
+    }
+    else if (key.startsWith("hotkey_")) {
+        registerHotkeys();
+    }
+    else if (key == "translatorEngine") {
+        switchTranslator(AppConfig::instance().translatorEngine());
+    }
+}
+
+void ScreenTranslator::registerHotkeys()
+{
+    if (!hotkey)
+        return;
+    hotkey->unregisterAll();
+    registerOneHotkey(ActCapture, "capture", "F1");
+    registerOneHotkey(ActLanguage, "language", "F2");
+    registerOneHotkey(ActSettings, "settings", "F4");
+    registerOneHotkey(ActToggleWindow, "toggleWindow", "");
+    registerOneHotkey(ActSpeakLast, "speakLast", "");
+}
+
+void ScreenTranslator::registerOneHotkey(int id, const QString& action, const QString& def)
+{
+    QString seqStr = AppConfig::instance().hotkey(action);
+    if (seqStr.isEmpty())
+        seqStr = def;
+    if (!seqStr.isEmpty())
+        hotkey->registerHotkey(id, QKeySequence(seqStr));
+}
+
+void ScreenTranslator::lookupWord(const QString& word)
+{
+    if (dictService)
+        dictService->lookup(word);
+}
+
+void ScreenTranslator::showDictionaryPopup(const QString& word, const QString& text, bool isError)
+{
+    if (!dictPopup) {
+        dictPopup = new DictionaryPopup();
+        connect(dictPopup, &DictionaryPopup::speakRequested, this, [this](const QString& w) {
+            if (tts) tts->speak(w);
+        });
+    }
+    if (isError)
+        dictPopup->showError(text);
+    else
+        dictPopup->showResult(word, text);
+    dictPopup->move(QCursor::pos());
+    dictPopup->show();
+}
+
+void ScreenTranslator::switchTranslator(const QString& engineId)
+{
+    ITranslator* next = googleTranslator;
+    if (!engineId.isEmpty() && engineId != "google") {
+        auto it = m_pluginTranslators.find(engineId);
+        if (it != m_pluginTranslators.end()) {
+            next = it.value();
+        } else {
+            for (ITranslatorPlugin* p : pluginManager->translatorPlugins()) {
+                if (p->name() == engineId) {
+                    auto* pt = new PluginTranslator(p, this);
+                    m_pluginTranslators.insert(engineId, pt);
+                    next = pt;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (next == translator)
+        return;
+
+    if (translator)
+        disconnect(translator, nullptr, this, nullptr);
+    translator = next;
+    connect(translator, &ITranslator::finished, this, &ScreenTranslator::onTranslationFinished);
+    connect(translator, &ITranslator::error, this, &ScreenTranslator::onTranslationError);
+}
+
+void ScreenTranslator::loadPlugins()
+{
+    if (!pluginManager)
+        return;
+
+    const QString exeDir = QCoreApplication::applicationDirPath();
+    QString pluginDir = exeDir + "/plugins";
+    if (!QDir(pluginDir).exists())
+        pluginDir = exeDir;
+    pluginManager->loadPlugins(pluginDir);
+
+    switchTranslator(AppConfig::instance().translatorEngine());
+}
 
 void ScreenTranslator::clearHistory()
 {
@@ -229,16 +441,17 @@ void ScreenTranslator::mouseReleaseEvent(QMouseEvent* event)
 void ScreenTranslator::paintEvent(QPaintEvent* event)
 {
     Q_UNUSED(event);
+    const QString theme = AppConfig::instance().theme();
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.setBrush(QColor(30, 30, 30, 200));
+    painter.setBrush(ThemeManager::windowBackground(theme));
     painter.setPen(Qt::NoPen);
     painter.drawRoundedRect(rect(), 10, 10);
 
     // 若未截图，显示提示文字（背景上）
     if (!hasCaptured && historyList.isEmpty()) {
-        painter.setPen(QColor(255, 255, 255, 180));
-        QFont font("Microsoft YaHei", 12);
+        painter.setPen(ThemeManager::foregroundColor(theme));
+        QFont font(AppConfig::instance().fontFamily(), AppConfig::instance().fontSize());
         painter.setFont(font);
         painter.drawText(rect(), Qt::AlignCenter, "屏幕翻译器\n按 F1 截图");
     }
@@ -251,6 +464,9 @@ void ScreenTranslator::keyPressEvent(QKeyEvent* event)
     }
     else if (event->key() == Qt::Key_F2) {
         showLanguageDialog();
+    }
+    else if (event->key() == Qt::Key_F4) {
+        openSettings();
     }
     QWidget::keyPressEvent(event);
 }
@@ -326,6 +542,11 @@ void ScreenTranslator::onTranslationFinished(const QString& translatedText, cons
         historyList.last() = lastEntry;
         updateHistoryDisplay();
     }
+
+    if (AppConfig::instance().ttsEnabled() && tts && tts->isAvailable())
+        tts->speak(translatedText);
+
+    m_lastTranslated = translatedText;
 }
 
 void ScreenTranslator::onTranslationError(const QString& errorMessage)

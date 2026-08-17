@@ -20,7 +20,16 @@
 #include <leptonica/allheaders.h>
 #include <opencv2/opencv.hpp>
 #include "CaptureOverlay.h"
-#include "TranslationService.h"
+#include <QHash>
+
+class ITranslator;
+class TranslationService;
+class PluginTranslator;
+class DictionaryService;
+class DictionaryPopup;
+class PluginManager;
+class TextToSpeech;
+class GlobalHotkey;
 
 class ScreenTranslator : public QWidget
 {
@@ -49,10 +58,19 @@ private slots:
     void onTranslationFinished(const QString& translatedText, const QString& detectedLang);
     void onTranslationError(const QString& errorMessage);
     void showLanguageDialog();
+    void openSettings();
 
 private:
     void initUI();
     void adjustToRightEdge();
+    void applyTheme();
+    void onConfigChanged(const QString& key);
+    void registerHotkeys();
+    void registerOneHotkey(int id, const QString& action, const QString& def);
+    void lookupWord(const QString& word);
+    void showDictionaryPopup(const QString& word, const QString& text, bool isError);
+    void switchTranslator(const QString& engineId);
+    void loadPlugins();
     void preprocessImage(const cv::Mat& src, cv::Mat& dst);
     QImage matToQImage(const cv::Mat& mat);
     QString runOCR(const cv::Mat& image);
@@ -86,12 +104,30 @@ private:
     // 历史记录列表
     QStringList historyList;
 
-    // 翻译服务
-    TranslationService* translator;
-    
+    // 翻译引擎（可切换）
+    ITranslator* translator;
+    TranslationService* googleTranslator;
+    QHash<QString, PluginTranslator*> m_pluginTranslators;
+
+    // 词典查询
+    DictionaryService* dictService;
+    DictionaryPopup* dictPopup;
+
+    // 插件管理
+    PluginManager* pluginManager;
+
+    // TTS
+    TextToSpeech* tts;
+
+    // 全局热键
+    GlobalHotkey* hotkey;
+
     // 语言
     QString m_sourceLang;
     QString m_targetLang;
+
+    // 最近一条译文（用于"朗读最近一条"）
+    QString m_lastTranslated;
 };
 
 #endif

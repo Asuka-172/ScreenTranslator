@@ -1,24 +1,19 @@
 #ifndef TRANSLATIONSERVICE_H
 #define TRANSLATIONSERVICE_H
 
-#include <QObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include "ITranslator.h"
 
-class TranslationService : public QObject
+// å†…ç½® Google ç¿»è¯‘å¼•æ“ï¼Œå®ç° ITranslator æ¥å£ã€‚
+class TranslationService : public ITranslator
 {
     Q_OBJECT
 public:
     explicit TranslationService(QObject* parent = nullptr);
 
-    // ·¢Æğ·­ÒëÇëÇó£¬Òì²½·µ»Ø½á¹û
-    void translate(const QString& text,
-        const QString& sourceLang = "auto",   // ×Ô¶¯¼ì²â
-        const QString& targetLang = "zh");
-
-signals:
-    void translationFinished(const QString& translatedText, const QString& detectedLang);
-    void translationError(const QString& errorMessage);
+    QString name() const override;
+    void translate(const QString& text, const QString& sourceLang, const QString& targetLang) override;
 
 private slots:
     void onReplyFinished(QNetworkReply* reply);

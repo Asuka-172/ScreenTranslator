@@ -7,9 +7,14 @@
 #include <QSslConfiguration>
 
 TranslationService::TranslationService(QObject* parent)
-    : QObject(parent),
+    : ITranslator(parent),
     networkManager(new QNetworkAccessManager(this))
 {
+}
+
+QString TranslationService::name() const
+{
+    return QStringLiteral("Google");
 }
 
 void TranslationService::translate(const QString& text,
@@ -45,34 +50,34 @@ void TranslationService::onReplyFinished(QNetworkReply* reply)
     reply->deleteLater();
 
     if (reply->error() != QNetworkReply::NoError) {
-        emit translationError(reply->errorString());
+        emit error(reply->errorString());
         return;
     }
 
     QByteArray responseData = reply->readAll();
-    // Google ·µ»ØµÄÊÇÒ»¸ö JSON Êý×é£¬¸ñÊ½Îª£º
-    // [[["·­ÒëÎÄ±¾", "Ô­ÎÄ", null, null, 1]], null, "en"]
-    // ÎÒÃÇÐèÒªÈ¡³öµÚÒ»²¿·ÖµÄµÚÒ»¸ö×ÓÊý×éµÄµÚÒ»¸öÔªËØ¡£
+    // Google è¿”å›žçš„æ˜¯ä¸€ä¸ª JSON æ•°ç»„ï¼Œæ ¼å¼ä¸ºï¼š
+    // [[["ç¿»è¯‘æ–‡æœ¬", "åŽŸæ–‡", null, null, 1]], null, "en"]
+    // å–ç¬¬ä¸€ä¸ªéƒ¨åˆ†çš„ç¬¬ä¸€ä¸ªæ•°ç»„çš„ç¬¬ä¸€ä¸ªå…ƒç´ ã€‚
     QJsonDocument doc = QJsonDocument::fromJson(responseData);
     if (!doc.isArray()) {
-        emit translationError("Invalid response format");
+        emit error("Invalid response format");
         return;
     }
 
     QJsonArray rootArray = doc.array();
     if (rootArray.isEmpty() || !rootArray[0].isArray()) {
-        emit translationError("Empty translation result");
+        emit error("Empty translation result");
         return;
     }
 
     QJsonArray firstSegment = rootArray[0].toArray();
     if (firstSegment.isEmpty() || !firstSegment[0].isArray()) {
-        emit translationError("No translation segments");
+        emit error("No translation segments");
         return;
     }
 
     QString translatedText;
-    // ½«¶à¸ö¶ÎÂäÆ´½ÓÆðÀ´£¨Èç¹ûÓÐ£©
+    // ç¿»è¯‘ç»“æžœå¯èƒ½åˆ†ä¸ºå¤šä¸ªç‰‡æ®µï¼Œä¾æ¬¡æ‹¼æŽ¥ï¼š
     for (const QJsonValue& val : firstSegment) {
         QJsonArray part = val.toArray();
         if (!part.isEmpty()) {
@@ -80,16 +85,16 @@ void TranslationService::onReplyFinished(QNetworkReply* reply)
         }
     }
 
-    // ¼ì²âÔ´ÓïÑÔ£º¹È¸è·µ»ØÊý×éµÄµÚ3¸öÔªËØ£¨Ë÷Òý2£©ÎªÔ´ÓïÑÔ´úÂë
+    // æ£€æµ‹è¯­è¨€ï¼šå–è¿”å›žæ•°ç»„çš„ç¬¬3ä¸ªå…ƒç´ ï¼ˆç¬¬2ä¸ªä¸ºæºè¯­è¨€ä»£ç ï¼‰
     QString detectedLang = "??";
     if (rootArray.size() > 2 && rootArray[2].isString()) {
         detectedLang = rootArray[2].toString();
     }
 
     if (translatedText.isEmpty()) {
-        emit translationError("Translation empty");
+        emit error("Translation empty");
         return;
     }
 
-    emit translationFinished(translatedText, detectedLang);
+    emit finished(translatedText, detectedLang);
 }
