@@ -1,0 +1,40 @@
+# Build output
+/out/
+/build/
+build-*/
+
+# Visual Studio / CMake generated
+/.vs/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+install_manifest.txt
+compile_commands.json
+
+# Compiled objects / binaries
+*.obj
+*.o
+*.exe
+*.dll
+*.lib
+*.pdb
+*.ilk
+*.exp
+*.so
+*.dylib
+*.a
+
+# Qt / moc generated
+moc_*.cpp
+moc_*.h
+*.moc
+ui_*.h
+qrc_*.cpp
+.qmake.stash
+
+# IDE
+.idea/
+.vscode/
+*.user
+*.suo
