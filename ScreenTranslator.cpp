@@ -94,14 +94,29 @@ void ScreenTranslator::initUI()
     );
     layout->addWidget(historyTextEdit, 1);
 
+    // ---- 底部导出按钮（右下角） ----
+    exportBtn = new QPushButton("导出记录", this);
+    exportBtn->setCursor(Qt::PointingHandCursor);
+    exportBtn->setStyleSheet(
+        "QPushButton { color: white; font-size: 14px; background: rgba(255,255,255,40); "
+        "border: 1px solid rgba(255,255,255,60); border-radius: 5px; padding: 6px 16px; }"
+        "QPushButton:hover { background: rgba(255,255,255,80); }"
+        "QPushButton:pressed { background: rgba(255,255,255,30); }"
+    );
+    connect(exportBtn, &QPushButton::clicked, this, &ScreenTranslator::exportRecords);
+
+    QHBoxLayout* bottomLayout = new QHBoxLayout();
+    bottomLayout->addStretch();
+    bottomLayout->addWidget(exportBtn);
+    bottomLayout->setContentsMargins(0, 0, 0, 0);
+    layout->addLayout(bottomLayout);
+
     // ---- 右键菜单 ----
     contextMenu = new QMenu(this);
     QAction* copyLastAct = contextMenu->addAction("复制最新记录");
     connect(copyLastAct, &QAction::triggered, this, &ScreenTranslator::copyLastRecord);
     QAction* copyAllAct = contextMenu->addAction("复制全部记录");
     connect(copyAllAct, &QAction::triggered, this, &ScreenTranslator::copyAllRecords);
-    QAction* exportAct = contextMenu->addAction("导出记录");
-    connect(exportAct, &QAction::triggered, this, &ScreenTranslator::exportRecords);
     contextMenu->addSeparator();
     QAction* clearAct = contextMenu->addAction("清空记录");
     connect(clearAct, &QAction::triggered, this, &ScreenTranslator::clearHistory);

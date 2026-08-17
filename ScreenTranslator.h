@@ -61,6 +61,7 @@ private:
 
     // UI 组件
     QPushButton* closeBtn;
+    QPushButton* exportBtn;
     QTextEdit* historyTextEdit;   // 替换原来的 QLabel + QScrollArea
     QMenu* contextMenu;
 
