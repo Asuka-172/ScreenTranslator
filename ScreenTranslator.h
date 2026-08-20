@@ -12,6 +12,7 @@
 #include <QStringList>
 #include <future>
 #include <mutex>
+#include <vector>
 #include <QScrollBar>
 #include <QComboBox>
 #include <QDialog>
@@ -20,14 +21,11 @@
 #include <leptonica/allheaders.h>
 #include <opencv2/opencv.hpp>
 #include "CaptureOverlay.h"
-#include <QHash>
 
-class ITranslator;
-class TranslationService;
-class PluginTranslator;
 class PluginManager;
 class TextToSpeech;
 class GlobalHotkey;
+class TranslationEngineManager;
 
 class ScreenTranslator : public QWidget
 {
@@ -65,11 +63,10 @@ private:
     void onConfigChanged(const QString& key);
     void registerHotkeys();
     void registerOneHotkey(int id, const QString& action, const QString& def);
-    void switchTranslator(const QString& engineId);
     void loadPlugins();
-    void preprocessImage(const cv::Mat& src, cv::Mat& dst);
+    void preprocessCandidates(const cv::Mat& src, std::vector<cv::Mat>& out);
     QImage matToQImage(const cv::Mat& mat);
-    QString runOCR(const cv::Mat& image);
+    QString runOCR(const std::vector<cv::Mat>& images);
     void processCapturedPixmap(const QPixmap& pixmap);
     void updateHistoryDisplay();
 
@@ -100,10 +97,8 @@ private:
     // 历史记录列表
     QStringList historyList;
 
-    // 翻译引擎（可切换）
-    ITranslator* translator;
-    TranslationService* googleTranslator;
-    QHash<QString, PluginTranslator*> m_pluginTranslators;
+    // 翻译引擎管理器（注册/切换/回退/缓存）
+    TranslationEngineManager* engineManager;
 
     // 插件管理
     PluginManager* pluginManager;

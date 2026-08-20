@@ -1,7 +1,9 @@
 #include "SettingsDialog.h"
 #include "AppConfig.h"
+#include "OfflineTranslator.h"
 
 #include <QTabWidget>
+#include <QStackedWidget>
 #include <QVBoxLayout>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -17,6 +19,12 @@
 #include <QFont>
 #include <QKeySequenceEdit>
 #include <QListWidget>
+#include <QLineEdit>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QFile>
+#include <QFileInfo>
+#include <QDir>
 
 namespace {
 
@@ -75,6 +83,20 @@ void SettingsDialog::setEngines(const QStringList& engineIds, const QStringList&
     if (idx >= 0)
         m_engineCombo->setCurrentIndex(idx);
     m_engineCombo->blockSignals(false);
+    syncEngineStack();
+}
+
+void SettingsDialog::syncEngineStack()
+{
+    if (!m_engineCombo || !m_engineStack)
+        return;
+    const QString id = m_engineCombo->currentData().toString();
+    int idx = 0;
+    if (id == QLatin1String("custom"))
+        idx = 1;
+    else if (id == QLatin1String("offline"))
+        idx = 2;
+    m_engineStack->setCurrentIndex(idx);
 }
 
 void SettingsDialog::setPlugins(const QStringList& descriptions)
@@ -242,13 +264,173 @@ QWidget* SettingsDialog::createTranslationPage()
     QVBoxLayout* lay = new QVBoxLayout(page);
 
     QGroupBox* engineGroup = new QGroupBox("翻译引擎", page);
-    QFormLayout* engineForm = new QFormLayout(engineGroup);
+    QVBoxLayout* engineLay = new QVBoxLayout(engineGroup);
+
     m_engineCombo = new QComboBox(engineGroup);
-    m_engineCombo->addItem("Google", "google");
+    engineLay->addWidget(m_engineCombo);
+
+    m_engineStack = new QStackedWidget(engineGroup);
+
+    // 面板 0：默认（google / 插件）
+    QWidget* defaultPanel = new QWidget(m_engineStack);
+    {
+        QVBoxLayout* l = new QVBoxLayout(defaultPanel);
+        l->addWidget(new QLabel("该引擎无需额外配置。\n插件引擎的密钥请通过环境变量提供。", defaultPanel));
+    }
+    m_engineStack->addWidget(defaultPanel);
+
+    // 面板 1：自定义在线引擎
+    QWidget* customPanel = new QWidget(m_engineStack);
+    {
+        QFormLayout* f = new QFormLayout(customPanel);
+
+        QLineEdit* urlEdit = new QLineEdit(customPanel);
+        urlEdit->setText(AppConfig::instance().customEngineUrl());
+        urlEdit->setPlaceholderText("https://api.example.com/translate?key={key}&text={text}&from={from}&to={to}");
+        connect(urlEdit, &QLineEdit::editingFinished, urlEdit, [urlEdit]() {
+            AppConfig::instance().setCustomEngineUrl(urlEdit->text().trimmed());
+        });
+        f->addRow("请求 URL 模板", urlEdit);
+
+        QLineEdit* keyEdit = new QLineEdit(customPanel);
+        keyEdit->setText(AppConfig::instance().customEngineApiKey());
+        keyEdit->setEchoMode(QLineEdit::Password);
+        connect(keyEdit, &QLineEdit::editingFinished, keyEdit, [keyEdit]() {
+            AppConfig::instance().setCustomEngineApiKey(keyEdit->text());
+        });
+        f->addRow("API Key", keyEdit);
+
+        QComboBox* keyPosCombo = new QComboBox(customPanel);
+        keyPosCombo->addItem("URL 参数 ({key})", "url");
+        keyPosCombo->addItem("请求头", "header");
+        const bool hasHeader = !AppConfig::instance().customEngineKeyHeader().isEmpty();
+        keyPosCombo->setCurrentIndex(hasHeader ? 1 : 0);
+
+        QLineEdit* headerEdit = new QLineEdit(customPanel);
+        headerEdit->setText(AppConfig::instance().customEngineKeyHeader());
+        headerEdit->setPlaceholderText("Authorization / X-Api-Key");
+        headerEdit->setEnabled(hasHeader);
+        connect(headerEdit, &QLineEdit::editingFinished, headerEdit, [headerEdit]() {
+            AppConfig::instance().setCustomEngineKeyHeader(headerEdit->text().trimmed());
+        });
+        connect(keyPosCombo, &QComboBox::currentIndexChanged, keyPosCombo,
+            [keyPosCombo, headerEdit](int i) {
+                const bool header = (i == 1);
+                headerEdit->setEnabled(header);
+                if (!header)
+                    AppConfig::instance().setCustomEngineKeyHeader(QString());
+            });
+
+        f->addRow("密钥位置", keyPosCombo);
+        f->addRow("请求头名称", headerEdit);
+
+        QLineEdit* pathEdit = new QLineEdit(customPanel);
+        pathEdit->setText(AppConfig::instance().customEngineResultPath());
+        pathEdit->setPlaceholderText("如 data.translatedText；留空表示整个响应即译文");
+        connect(pathEdit, &QLineEdit::editingFinished, pathEdit, [pathEdit]() {
+            AppConfig::instance().setCustomEngineResultPath(pathEdit->text().trimmed());
+        });
+        f->addRow("结果 JSON 路径", pathEdit);
+
+        QLabel* hint = new QLabel("占位符：{text}=原文  {from}=源语言  {to}=目标语言  {key}=密钥", customPanel);
+        hint->setWordWrap(true);
+        f->addRow(hint);
+    }
+    m_engineStack->addWidget(customPanel);
+
+    // 面板 2：离线（本地词典）
+    QWidget* offlinePanel = new QWidget(m_engineStack);
+    {
+        QFormLayout* f = new QFormLayout(offlinePanel);
+
+        QCheckBox* enableCheck = new QCheckBox("启用离线翻译（本地词典）", offlinePanel);
+        enableCheck->setChecked(AppConfig::instance().offlineEnabled());
+        connect(enableCheck, &QCheckBox::toggled, enableCheck, [](bool on) {
+            AppConfig::instance().setOfflineEnabled(on);
+        });
+        f->addRow(enableCheck);
+
+        QLineEdit* modelEdit = new QLineEdit(offlinePanel);
+        modelEdit->setText(AppConfig::instance().offlineModelPath());
+        modelEdit->setPlaceholderText(OfflineTranslator::defaultModelDir());
+        connect(modelEdit, &QLineEdit::editingFinished, modelEdit, [modelEdit]() {
+            AppConfig::instance().setOfflineModelPath(modelEdit->text().trimmed());
+        });
+        f->addRow("模型目录", modelEdit);
+
+        QLineEdit* glossEdit = new QLineEdit(offlinePanel);
+        glossEdit->setText(AppConfig::instance().offlineGlossaryPath());
+        glossEdit->setPlaceholderText(OfflineTranslator::defaultGlossaryPath());
+        connect(glossEdit, &QLineEdit::editingFinished, glossEdit, [glossEdit]() {
+            AppConfig::instance().setOfflineGlossaryPath(glossEdit->text().trimmed());
+        });
+        f->addRow("词典文件", glossEdit);
+
+        QPushButton* editBtn = new QPushButton("编辑词典", offlinePanel);
+        connect(editBtn, &QPushButton::clicked, editBtn, [glossEdit]() {
+            QString path = glossEdit->text().trimmed();
+            if (path.isEmpty())
+                path = OfflineTranslator::defaultGlossaryPath();
+            QFile file(path);
+            if (!file.exists()) {
+                QDir().mkpath(QFileInfo(path).absolutePath());
+                if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                    file.write("# 离线词典：每行一条，格式为  源词=译文  （# 开头为注释）\n");
+                    file.close();
+                }
+            }
+            QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+        });
+        f->addRow(editBtn);
+
+        QLabel* fmtHint = new QLabel("词典格式：每行 源词=译文（# 开头为注释）", offlinePanel);
+        fmtHint->setWordWrap(true);
+        f->addRow(fmtHint);
+    }
+    m_engineStack->addWidget(offlinePanel);
+
+    engineLay->addWidget(m_engineStack);
+
     connect(m_engineCombo, &QComboBox::currentIndexChanged, m_engineCombo, [this](int) {
         AppConfig::instance().setTranslatorEngine(m_engineCombo->currentData().toString());
+        syncEngineStack();
     });
-    engineForm->addRow("引擎", m_engineCombo);
+
+    QPushButton* testBtn = new QPushButton("测试翻译", engineGroup);
+    connect(testBtn, &QPushButton::clicked, this, [this]() {
+        emit testTranslationRequested(m_engineCombo->currentData().toString());
+    });
+    engineLay->addWidget(testBtn, 0, Qt::AlignLeft);
+
+    lay->addWidget(engineGroup);
+
+    QGroupBox* fallbackGroup = new QGroupBox("回退", page);
+    QVBoxLayout* fallbackLay = new QVBoxLayout(fallbackGroup);
+    QCheckBox* fallbackCheck = new QCheckBox("在线引擎失败时自动回退到离线引擎", fallbackGroup);
+    fallbackCheck->setChecked(AppConfig::instance().fallbackEnabled());
+    connect(fallbackCheck, &QCheckBox::toggled, fallbackCheck, [](bool on) {
+        AppConfig::instance().setFallbackEnabled(on);
+    });
+    fallbackLay->addWidget(fallbackCheck);
+    lay->addWidget(fallbackGroup);
+
+    QGroupBox* cacheGroup = new QGroupBox("翻译缓存", page);
+    QFormLayout* cacheForm = new QFormLayout(cacheGroup);
+    QCheckBox* cacheCheck = new QCheckBox("启用缓存", cacheGroup);
+    cacheCheck->setChecked(AppConfig::instance().cacheEnabled());
+    connect(cacheCheck, &QCheckBox::toggled, cacheCheck, [](bool on) {
+        AppConfig::instance().setCacheEnabled(on);
+    });
+    cacheForm->addRow(cacheCheck);
+
+    QSpinBox* maxSpin = new QSpinBox(cacheGroup);
+    maxSpin->setRange(0, 10000);
+    maxSpin->setValue(AppConfig::instance().cacheMaxEntries());
+    connect(maxSpin, &QSpinBox::valueChanged, maxSpin, [](int v) {
+        AppConfig::instance().setCacheMaxEntries(v);
+    });
+    cacheForm->addRow("最大缓存条数", maxSpin);
+    lay->addWidget(cacheGroup);
 
     QGroupBox* exportGroup = new QGroupBox("历史导出格式", page);
     QFormLayout* exportForm = new QFormLayout(exportGroup);
@@ -263,9 +445,8 @@ QWidget* SettingsDialog::createTranslationPage()
         AppConfig::instance().setExportFormat(exportCombo->currentData().toString());
     });
     exportForm->addRow("格式", exportCombo);
-
-    lay->addWidget(engineGroup);
     lay->addWidget(exportGroup);
+
     lay->addStretch();
     return page;
 }

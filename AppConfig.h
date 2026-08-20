@@ -41,6 +41,32 @@ public:
     QString exportFormat() const;          // "txt" | "docx" | "md" | "csv"
     void setExportFormat(const QString& f);
 
+    // 自定义在线引擎
+    QString customEngineUrl() const;       // 含 {text} {from} {to} {key} 占位符
+    void setCustomEngineUrl(const QString& u);
+    QString customEngineApiKey() const;
+    void setCustomEngineApiKey(const QString& k);
+    QString customEngineKeyHeader() const; // 空=密钥放 URL {key}；非空=作为请求头名
+    void setCustomEngineKeyHeader(const QString& h);
+    QString customEngineResultPath() const; // JSON 结果路径，空=整个响应体即译文
+    void setCustomEngineResultPath(const QString& p);
+
+    // 离线引擎
+    bool offlineEnabled() const;
+    void setOfflineEnabled(bool e);
+    QString offlineModelPath() const;      // 空=运行时解析为 <appdir>/models
+    void setOfflineModelPath(const QString& p);
+    QString offlineGlossaryPath() const;   // 空=运行时解析为 <appdir>/models/glossary.txt
+    void setOfflineGlossaryPath(const QString& p);
+
+    // 回退与缓存
+    bool fallbackEnabled() const;
+    void setFallbackEnabled(bool e);
+    bool cacheEnabled() const;
+    void setCacheEnabled(bool e);
+    int cacheMaxEntries() const;
+    void setCacheMaxEntries(int n);
+
     // 全局热键（action -> QKeySequence 字符串）
     QString hotkey(const QString& action) const;
     void setHotkey(const QString& action, const QString& seq);

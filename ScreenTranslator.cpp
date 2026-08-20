@@ -32,6 +32,10 @@
 #include "TranslationService.h"
 #include "PluginManager.h"
 #include "PluginTranslator.h"
+#include "TranslationEngineManager.h"
+#include "CustomOnlineTranslator.h"
+#include "OfflineTranslator.h"
+#include "ITranslator.h"
 
 namespace {
 
@@ -43,6 +47,63 @@ enum HotkeyAction {
     ActToggleWindow = 4,
     ActSpeakLast = 5,
 };
+
+// 判断是否为 CJK 表意文字（中文等按字符连续书写，不应被空格拆分）
+bool isCjkIdeograph(QChar ch)
+{
+    const ushort u = ch.unicode();
+    return (u >= 0x4E00 && u <= 0x9FFF)     // CJK 统一表意文字
+        || (u >= 0x3400 && u <= 0x4DBF)     // 扩展 A
+        || (u >= 0xF900 && u <= 0xFAFF);    // 兼容表意文字
+}
+
+// 清理 OCR 输出：去除空行/多余空白，把被误分割的行合并回连续文本，
+// 并移除 CJK 字符相邻的空格，避免中文被拆成单个字导致翻译出错。
+QString cleanupOcrText(const QString& raw)
+{
+    QString text = raw;
+    text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    text.replace(QChar('\r'), QChar('\n'));
+
+    QStringList cleaned;
+    const QStringList lines = text.split(QLatin1Char('\n'));
+    for (QString line : lines) {
+        line = line.trimmed();
+        if (!line.isEmpty())
+            cleaned << line;
+    }
+
+    QString result;
+    for (int i = 0; i < cleaned.size(); ++i) {
+        if (i > 0) {
+            // 上行以连字符结尾视为英文换行断词：去掉连字符直接拼接
+            if (cleaned[i - 1].endsWith(QLatin1Char('-'))) {
+                result.chop(1);
+                result += cleaned[i];
+            } else {
+                result += QLatin1Char(' ');
+                result += cleaned[i];
+            }
+        } else {
+            result += cleaned[i];
+        }
+    }
+
+    // 移除与 CJK 字符相邻的空格（如“你 的 b 站” → “你的b站”）
+    QString out;
+    out.reserve(result.size());
+    for (int i = 0; i < result.size(); ++i) {
+        const QChar c = result.at(i);
+        if (c == QLatin1Char(' ') || c == QChar('\t')) {
+            const bool prevCjk = (i > 0) && isCjkIdeograph(result.at(i - 1));
+            const bool nextCjk = (i + 1 < result.size()) && isCjkIdeograph(result.at(i + 1));
+            if (prevCjk || nextCjk)
+                continue;
+        }
+        out.append(c);
+    }
+    return out.trimmed();
+}
 
 } // namespace
 
@@ -58,11 +119,13 @@ ScreenTranslator::ScreenTranslator(QWidget* parent)
         qWarning() << "Could not initialize tesseract.";
     }
 
-    // 初始化翻译引擎（内置 Google）
-    googleTranslator = new TranslationService(this);
-    translator = googleTranslator;
-    connect(translator, &ITranslator::finished, this, &ScreenTranslator::onTranslationFinished);
-    connect(translator, &ITranslator::error, this, &ScreenTranslator::onTranslationError);
+    // 初始化翻译引擎管理器，注册内置引擎（默认 Google）
+    engineManager = new TranslationEngineManager(this);
+    engineManager->registerEngine(QStringLiteral("google"), new TranslationService(this));
+    engineManager->registerEngine(QStringLiteral("custom"), new CustomOnlineTranslator(this));
+    engineManager->registerEngine(QStringLiteral("offline"), new OfflineTranslator(this));
+    connect(engineManager, &TranslationEngineManager::finished, this, &ScreenTranslator::onTranslationFinished);
+    connect(engineManager, &TranslationEngineManager::error, this, &ScreenTranslator::onTranslationError);
 
     // 初始化 TTS
     tts = new TextToSpeech(this);
@@ -184,15 +247,24 @@ void ScreenTranslator::openSettings()
         if (tts) tts->speak(QStringLiteral("你好，这是翻译朗读测试。"));
     });
 
-    QStringList engineIds;
+    QStringList engineIds = engineManager->engineIds();
     QStringList engineLabels;
-    engineIds << "google";
-    engineLabels << "Google";
-    for (ITranslatorPlugin* p : pluginManager->translatorPlugins()) {
-        engineIds << p->name();
-        engineLabels << p->name();
+    for (const QString& id : engineIds) {
+        ITranslator* eng = engineManager->engine(id);
+        engineLabels << (eng ? eng->name() : id);
     }
     dlg.setEngines(engineIds, engineLabels, AppConfig::instance().translatorEngine());
+
+    connect(&dlg, &SettingsDialog::testTranslationRequested, this, [this](const QString& id) {
+        engineManager->testTranslate(id, QStringLiteral("Hello"), QStringLiteral("en"), QStringLiteral("zh-CN"));
+    });
+    connect(engineManager, &TranslationEngineManager::testResult, &dlg,
+        [](const QString&, bool ok, const QString& message) {
+            if (ok)
+                QMessageBox::information(nullptr, QStringLiteral("测试翻译"), QStringLiteral("翻译成功：\n%1").arg(message));
+            else
+                QMessageBox::warning(nullptr, QStringLiteral("测试翻译"), QStringLiteral("翻译失败：\n%1").arg(message));
+        });
 
     QStringList pluginDescs;
     for (IPlugin* p : pluginManager->plugins())
@@ -232,7 +304,7 @@ void ScreenTranslator::onConfigChanged(const QString& key)
         registerHotkeys();
     }
     else if (key == "translatorEngine") {
-        switchTranslator(AppConfig::instance().translatorEngine());
+        engineManager->setCurrentEngine(AppConfig::instance().translatorEngine());
     }
 }
 
@@ -257,35 +329,6 @@ void ScreenTranslator::registerOneHotkey(int id, const QString& action, const QS
         hotkey->registerHotkey(id, QKeySequence(seqStr));
 }
 
-void ScreenTranslator::switchTranslator(const QString& engineId)
-{
-    ITranslator* next = googleTranslator;
-    if (!engineId.isEmpty() && engineId != "google") {
-        auto it = m_pluginTranslators.find(engineId);
-        if (it != m_pluginTranslators.end()) {
-            next = it.value();
-        } else {
-            for (ITranslatorPlugin* p : pluginManager->translatorPlugins()) {
-                if (p->name() == engineId) {
-                    auto* pt = new PluginTranslator(p, this);
-                    m_pluginTranslators.insert(engineId, pt);
-                    next = pt;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (next == translator)
-        return;
-
-    if (translator)
-        disconnect(translator, nullptr, this, nullptr);
-    translator = next;
-    connect(translator, &ITranslator::finished, this, &ScreenTranslator::onTranslationFinished);
-    connect(translator, &ITranslator::error, this, &ScreenTranslator::onTranslationError);
-}
-
 void ScreenTranslator::loadPlugins()
 {
     if (!pluginManager)
@@ -297,7 +340,10 @@ void ScreenTranslator::loadPlugins()
         pluginDir = exeDir;
     pluginManager->loadPlugins(pluginDir);
 
-    switchTranslator(AppConfig::instance().translatorEngine());
+    for (ITranslatorPlugin* p : pluginManager->translatorPlugins())
+        engineManager->registerEngine(p->name(), new PluginTranslator(p, this));
+
+    engineManager->setCurrentEngine(AppConfig::instance().translatorEngine());
 }
 
 void ScreenTranslator::clearHistory()
@@ -449,10 +495,10 @@ void ScreenTranslator::processCapturedPixmap(const QPixmap& pixmap)
         image.bytesPerLine()).clone();
     cv::cvtColor(mat, mat, cv::COLOR_RGBA2BGR);
 
-    cv::Mat processed;
-    preprocessImage(mat, processed);
+    std::vector<cv::Mat> candidates;
+    preprocessCandidates(mat, candidates);
 
-    if (processed.empty() || cv::countNonZero(processed) == 0) {
+    if (candidates.empty()) {
         qWarning() << "Preprocessed image is invalid!";
         return;
     }
@@ -462,8 +508,8 @@ void ScreenTranslator::processCapturedPixmap(const QPixmap& pixmap)
     update();
 
     // 异步 OCR + 翻译
-    ocrFuture = std::async(std::launch::async, [this, processed = processed.clone()]() {
-        QString ocrResult = runOCR(processed);
+    ocrFuture = std::async(std::launch::async, [this, candidates = std::move(candidates)]() {
+        QString ocrResult = runOCR(candidates);
         if (ocrResult.isEmpty()) ocrResult = "No text found";
 
         QMetaObject::invokeMethod(this, [this, ocrResult]() {
@@ -472,7 +518,7 @@ void ScreenTranslator::processCapturedPixmap(const QPixmap& pixmap)
             historyList.append(pendingEntry);
             updateHistoryDisplay();
 
-            translator->translate(ocrResult, m_sourceLang, m_targetLang);
+            engineManager->translate(ocrResult, m_sourceLang, m_targetLang);
             }, Qt::QueuedConnection);
         });
 }
@@ -509,23 +555,42 @@ void ScreenTranslator::onTranslationError(const QString& errorMessage)
     }
 }
 
-void ScreenTranslator::preprocessImage(const cv::Mat& src, cv::Mat& dst)
+void ScreenTranslator::preprocessCandidates(const cv::Mat& src, std::vector<cv::Mat>& out)
 {
+    out.clear();
+
     cv::Mat gray;
-    if (src.channels() == 3)
-        cv::cvtColor(src, gray, cv::COLOR_BGR2GRAY);
-    else
+    if (src.channels() == 3) {
+        // 复杂彩色背景：按对比度（标准差）选择 R/G/B 中最能区分文字与背景的通道，
+        // 避免亮度转灰度在文字与背景亮度相近、但色相不同时丢失对比度。
+        cv::Mat chans[3];
+        cv::split(src, chans);
+        int best = 0;
+        double bestStd = -1.0;
+        for (int c = 0; c < 3; ++c) {
+            cv::Scalar m, s;
+            cv::meanStdDev(chans[c], m, s);
+            if (s[0] > bestStd) {
+                bestStd = s[0];
+                best = c;
+            }
+        }
+        gray = chans[best];
+    } else {
         gray = src.clone();
-
-    // ------------- 关键改动：在增强之前判断并反转 -------------
-    // 计算原始灰度图的平均亮度，若平均亮度 < 128 说明背景偏暗（深底浅字）
-    cv::Scalar meanVal = cv::mean(gray);
-    if (meanVal[0] < 128) {
-        cv::bitwise_not(gray, gray);   // 反转灰度图，确保后续处理的是“白底黑字”
     }
-    // -----------------------------------------------------------
 
-    // 放大、锐化、CLAHE 等增强（和之前一样，但作用于可能已反转的图像）
+    // 用 Otsu 自动判断文字极性（深字浅底 or 浅字深底）。文字通常是像素较少的那一类：
+    // 若亮色类别像素更少（浅字深底/灰底浅字），则反转，使后续统一按“深字浅底”处理。
+    // 这比固定用平均亮度 128 判断更稳，能正确识别灰色背景下的浅色/深色文字。
+    cv::Mat otsuBin;
+    const double otsu = cv::threshold(gray, otsuBin, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+    const int darkCount = cv::countNonZero(gray <= otsu);
+    const int brightCount = static_cast<int>(gray.total()) - darkCount;
+    if (brightCount < darkCount)
+        cv::bitwise_not(gray, gray);   // 反转灰度图，确保后续处理的是“白底黑字”
+
+    // 放大、锐化、CLAHE、去噪等共同增强
     cv::resize(gray, gray, cv::Size(), 2.0, 2.0, cv::INTER_CUBIC);
 
     cv::Mat laplacian;
@@ -538,16 +603,32 @@ void ScreenTranslator::preprocessImage(const cv::Mat& src, cv::Mat& dst)
 
     cv::medianBlur(gray, gray, 3);
 
-    // 自适应阈值（此时文字一定是暗色，背景是亮色）
-    cv::Mat binary;
-    cv::adaptiveThreshold(gray, binary, 255,
-        cv::ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv::THRESH_BINARY, 11, 2);
+    const cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(2, 2));
 
-    // 闭运算连接笔画
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(2, 2));
-    cv::morphologyEx(binary, dst, cv::MORPH_CLOSE, kernel);
+    // 多策略二值化，产生多个候选，交由 runOCR 用置信度择优：
+    // 1) 全局 Otsu —— 适合纯色/均匀背景（如纯灰底黑字）
+    cv::Mat b1;
+    cv::threshold(gray, b1, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
+    cv::morphologyEx(b1, b1, cv::MORPH_CLOSE, kernel);
+    out.push_back(b1);
 
+    // 2) 自适应高斯（小窗）—— 适合光照不均/复杂背景
+    cv::Mat b2;
+    cv::adaptiveThreshold(gray, b2, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 11, 2);
+    cv::morphologyEx(b2, b2, cv::MORPH_CLOSE, kernel);
+    out.push_back(b2);
+
+    // 3) 自适应均值
+    cv::Mat b3;
+    cv::adaptiveThreshold(gray, b3, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 11, 2);
+    cv::morphologyEx(b3, b3, cv::MORPH_CLOSE, kernel);
+    out.push_back(b3);
+
+    // 4) 自适应高斯（大窗）—— 适合较大字号/更不均匀背景
+    cv::Mat b4;
+    cv::adaptiveThreshold(gray, b4, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 25, 5);
+    cv::morphologyEx(b4, b4, cv::MORPH_CLOSE, kernel);
+    out.push_back(b4);
 }
 
 QImage ScreenTranslator::matToQImage(const cv::Mat& mat)
@@ -562,16 +643,34 @@ QImage ScreenTranslator::matToQImage(const cv::Mat& mat)
     return QImage();
 }
 
-QString ScreenTranslator::runOCR(const cv::Mat& image)
+QString ScreenTranslator::runOCR(const std::vector<cv::Mat>& images)
 {
     std::lock_guard<std::mutex> lock(tessMutex);
-    if (!tesseract || image.empty()) return "";
-    tesseract->SetImage(image.data, image.cols, image.rows, 1, image.step);
-    tesseract->SetPageSegMode(tesseract::PSM_SINGLE_BLOCK);
-    char* outText = tesseract->GetUTF8Text();
-    QString result = QString::fromUtf8(outText);
-    delete[] outText;
-    return result.trimmed();
+    if (!tesseract) return "";
+
+    QString bestText;
+    int bestConf = -1;
+
+    for (const cv::Mat& image : images) {
+        if (image.empty())
+            continue;
+
+        tesseract->SetImage(image.data, image.cols, image.rows, 1, image.step);
+        tesseract->SetPageSegMode(tesseract::PSM_SINGLE_BLOCK);
+        char* outText = tesseract->GetUTF8Text();
+        const QString text = cleanupOcrText(QString::fromUtf8(outText));
+        delete[] outText;
+        if (text.isEmpty())
+            continue;
+
+        // 取置信度最高的候选结果
+        const int conf = tesseract->MeanTextConf();
+        if (conf > bestConf) {
+            bestConf = conf;
+            bestText = text;
+        }
+    }
+    return bestText;
 }
 
 void ScreenTranslator::showLanguageDialog()

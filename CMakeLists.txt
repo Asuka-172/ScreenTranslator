@@ -17,6 +17,9 @@ set(SOURCES
     ScreenTranslator.cpp
     CaptureOverlay.cpp
     TranslationService.cpp
+    CustomOnlineTranslator.cpp
+    OfflineTranslator.cpp
+    TranslationEngineManager.cpp
     DocxExporter.cpp
     AppConfig.cpp
     ThemeManager.cpp
@@ -31,6 +34,9 @@ set(HEADERS
     ScreenTranslator.h
     CaptureOverlay.h
     TranslationService.h
+    CustomOnlineTranslator.h
+    OfflineTranslator.h
+    TranslationEngineManager.h
     ITranslator.h
     DocxExporter.h
     AppConfig.h
