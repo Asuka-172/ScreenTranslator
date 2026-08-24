@@ -59,6 +59,12 @@ public:
     QString offlineGlossaryPath() const;   // 空=运行时解析为 <appdir>/models/glossary.txt
     void setOfflineGlossaryPath(const QString& p);
 
+    // 百度翻译插件
+    QString baiduAppId() const;
+    void setBaiduAppId(const QString& id);
+    QString baiduSecret() const;
+    void setBaiduSecret(const QString& s);
+
     // 回退与缓存
     bool fallbackEnabled() const;
     void setFallbackEnabled(bool e);

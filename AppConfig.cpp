@@ -50,6 +50,8 @@ void AppConfig::ensureDefaults()
     setDefault("offlineEnabled", false);
     setDefault("offlineModelPath", "");
     setDefault("offlineGlossaryPath", "");
+    setDefault("baiduAppId", "");
+    setDefault("baiduSecret", "");
     setDefault("fallbackEnabled", false);
     setDefault("cacheEnabled", true);
     setDefault("cacheMaxEntries", 500);
@@ -116,6 +118,12 @@ void AppConfig::setOfflineModelPath(const QString& p) { setValue("offlineModelPa
 
 QString AppConfig::offlineGlossaryPath() const { return m_settings.value("offlineGlossaryPath", "").toString(); }
 void AppConfig::setOfflineGlossaryPath(const QString& p) { setValue("offlineGlossaryPath", p); }
+
+QString AppConfig::baiduAppId() const { return m_settings.value("baiduAppId", "").toString(); }
+void AppConfig::setBaiduAppId(const QString& id) { setValue("baiduAppId", id); }
+
+QString AppConfig::baiduSecret() const { return m_settings.value("baiduSecret", "").toString(); }
+void AppConfig::setBaiduSecret(const QString& s) { setValue("baiduSecret", s); }
 
 bool AppConfig::fallbackEnabled() const { return m_settings.value("fallbackEnabled", false).toBool(); }
 void AppConfig::setFallbackEnabled(bool e) { setValue("fallbackEnabled", e); }

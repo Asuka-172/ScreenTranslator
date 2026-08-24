@@ -72,7 +72,8 @@ QString BaiduTranslatorPlugin::translate(const QString& text, const QString& sou
     }
 
     QByteArray response;
-    curl_easy_setopt(curl, CURLOPT_URL, url.toString().toUtf8().constData());
+    const QByteArray urlBytes = url.toEncoded();
+    curl_easy_setopt(curl, CURLOPT_URL, urlBytes.constData());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);

@@ -6,7 +6,6 @@
 class QTabWidget;
 class QComboBox;
 class QListWidget;
-class QStackedWidget;
 
 class SettingsDialog : public QDialog
 {
@@ -28,11 +27,9 @@ private:
     QWidget* createTranslationPage();
     QWidget* createPluginPage();
     QWidget* createAccessibilityPage();
-    void syncEngineStack();
 
     QTabWidget* m_tabs;
     QComboBox* m_engineCombo = nullptr;
-    QStackedWidget* m_engineStack = nullptr;
     QListWidget* m_pluginList = nullptr;
 };
 

@@ -115,7 +115,7 @@ ScreenTranslator::ScreenTranslator(QWidget* parent)
     // 初始化 Tesseract
     tesseract = new tesseract::TessBaseAPI();
     QString tessdataPath = QCoreApplication::applicationDirPath() + "/tessdata";
-    if (tesseract->Init(tessdataPath.toUtf8().constData(), "eng+chi_sim")) {
+    if (tesseract->Init(tessdataPath.toUtf8().constData(), "eng+chi_sim", tesseract::OEM_LSTM_ONLY)) {
         qWarning() << "Could not initialize tesseract.";
     }
 
@@ -135,6 +135,7 @@ ScreenTranslator::ScreenTranslator(QWidget* parent)
     // 初始化插件管理器并加载插件
     pluginManager = new PluginManager(this);
     loadPlugins();
+    syncBaiduEnv();
 
     initUI();
 
@@ -306,6 +307,9 @@ void ScreenTranslator::onConfigChanged(const QString& key)
     else if (key == "translatorEngine") {
         engineManager->setCurrentEngine(AppConfig::instance().translatorEngine());
     }
+    else if (key == "baiduAppId" || key == "baiduSecret") {
+        syncBaiduEnv();
+    }
 }
 
 void ScreenTranslator::registerHotkeys()
@@ -344,6 +348,12 @@ void ScreenTranslator::loadPlugins()
         engineManager->registerEngine(p->name(), new PluginTranslator(p, this));
 
     engineManager->setCurrentEngine(AppConfig::instance().translatorEngine());
+}
+
+void ScreenTranslator::syncBaiduEnv()
+{
+    qputenv("BAIDU_APPID", AppConfig::instance().baiduAppId().toUtf8());
+    qputenv("BAIDU_SECRET", AppConfig::instance().baiduSecret().toUtf8());
 }
 
 void ScreenTranslator::clearHistory()
@@ -509,7 +519,10 @@ void ScreenTranslator::processCapturedPixmap(const QPixmap& pixmap)
 
     // 异步 OCR + 翻译
     ocrFuture = std::async(std::launch::async, [this, candidates = std::move(candidates)]() {
+        const qint64 ocrStart = QDateTime::currentMSecsSinceEpoch();
         QString ocrResult = runOCR(candidates);
+        const qint64 ocrMs = QDateTime::currentMSecsSinceEpoch() - ocrStart;
+        qDebug() << "[perf] OCR took" << ocrMs << "ms," << ocrResult.size() << "chars";
         if (ocrResult.isEmpty()) ocrResult = "No text found";
 
         QMetaObject::invokeMethod(this, [this, ocrResult]() {
@@ -518,6 +531,7 @@ void ScreenTranslator::processCapturedPixmap(const QPixmap& pixmap)
             historyList.append(pendingEntry);
             updateHistoryDisplay();
 
+            m_translateStartMs = QDateTime::currentMSecsSinceEpoch();
             engineManager->translate(ocrResult, m_sourceLang, m_targetLang);
             }, Qt::QueuedConnection);
         });
@@ -532,6 +546,9 @@ void ScreenTranslator::updateHistoryDisplay()
 
 void ScreenTranslator::onTranslationFinished(const QString& translatedText, const QString& detectedLang)
 {
+    if (m_translateStartMs > 0)
+        qDebug() << "[perf] translate took" << (QDateTime::currentMSecsSinceEpoch() - m_translateStartMs) << "ms";
+
     if (!historyList.isEmpty()) {
         QString lastEntry = historyList.last();
         lastEntry.replace("→ 翻译中...", QString("→ [%1] %2").arg(detectedLang, translatedText));
@@ -547,6 +564,9 @@ void ScreenTranslator::onTranslationFinished(const QString& translatedText, cons
 
 void ScreenTranslator::onTranslationError(const QString& errorMessage)
 {
+    if (m_translateStartMs > 0)
+        qDebug() << "[perf] translate (error) took" << (QDateTime::currentMSecsSinceEpoch() - m_translateStartMs) << "ms";
+
     if (!historyList.isEmpty()) {
         QString lastEntry = historyList.last();
         lastEntry.replace("→ 翻译中...", QString("→ 翻译失败: %1").arg(errorMessage));
@@ -590,8 +610,8 @@ void ScreenTranslator::preprocessCandidates(const cv::Mat& src, std::vector<cv::
     if (brightCount < darkCount)
         cv::bitwise_not(gray, gray);   // 反转灰度图，确保后续处理的是“白底黑字”
 
-    // 放大、锐化、CLAHE、去噪等共同增强
-    cv::resize(gray, gray, cv::Size(), 2.0, 2.0, cv::INTER_CUBIC);
+    // 适度放大，兼顾小字识别与速度
+    cv::resize(gray, gray, cv::Size(), 1.5, 1.5, cv::INTER_CUBIC);
 
     cv::Mat laplacian;
     cv::Laplacian(gray, laplacian, CV_16S, 3);
@@ -605,7 +625,7 @@ void ScreenTranslator::preprocessCandidates(const cv::Mat& src, std::vector<cv::
 
     const cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(2, 2));
 
-    // 多策略二值化，产生多个候选，交由 runOCR 用置信度择优：
+    // 二值化产生候选，交由 runOCR 用置信度择优（减少候选数以提速）：
     // 1) 全局 Otsu —— 适合纯色/均匀背景（如纯灰底黑字）
     cv::Mat b1;
     cv::threshold(gray, b1, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
@@ -617,18 +637,6 @@ void ScreenTranslator::preprocessCandidates(const cv::Mat& src, std::vector<cv::
     cv::adaptiveThreshold(gray, b2, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 11, 2);
     cv::morphologyEx(b2, b2, cv::MORPH_CLOSE, kernel);
     out.push_back(b2);
-
-    // 3) 自适应均值
-    cv::Mat b3;
-    cv::adaptiveThreshold(gray, b3, 255, cv::ADAPTIVE_THRESH_MEAN_C, cv::THRESH_BINARY, 11, 2);
-    cv::morphologyEx(b3, b3, cv::MORPH_CLOSE, kernel);
-    out.push_back(b3);
-
-    // 4) 自适应高斯（大窗）—— 适合较大字号/更不均匀背景
-    cv::Mat b4;
-    cv::adaptiveThreshold(gray, b4, 255, cv::ADAPTIVE_THRESH_GAUSSIAN_C, cv::THRESH_BINARY, 25, 5);
-    cv::morphologyEx(b4, b4, cv::MORPH_CLOSE, kernel);
-    out.push_back(b4);
 }
 
 QImage ScreenTranslator::matToQImage(const cv::Mat& mat)

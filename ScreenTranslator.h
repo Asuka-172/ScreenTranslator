@@ -64,6 +64,7 @@ private:
     void registerHotkeys();
     void registerOneHotkey(int id, const QString& action, const QString& def);
     void loadPlugins();
+    void syncBaiduEnv();
     void preprocessCandidates(const cv::Mat& src, std::vector<cv::Mat>& out);
     QImage matToQImage(const cv::Mat& mat);
     QString runOCR(const std::vector<cv::Mat>& images);
@@ -115,6 +116,9 @@ private:
 
     // 最近一条译文（用于"朗读最近一条"）
     QString m_lastTranslated;
+
+    // 翻译 API 计时起点（毫秒，0 表示未开始）
+    qint64 m_translateStartMs = 0;
 };
 
 #endif
