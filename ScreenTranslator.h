@@ -26,6 +26,8 @@ class PluginManager;
 class TextToSpeech;
 class GlobalHotkey;
 class TranslationEngineManager;
+class DocumentTranslator;
+class QProgressDialog;
 
 class ScreenTranslator : public QWidget
 {
@@ -51,6 +53,7 @@ private slots:
     void copyLastRecord();
     void copyAllRecords();
     void exportRecords();
+    void importDocument();
     void onTranslationFinished(const QString& translatedText, const QString& detectedLang);
     void onTranslationError(const QString& errorMessage);
     void showLanguageDialog();
@@ -70,10 +73,12 @@ private:
     QString runOCR(const std::vector<cv::Mat>& images);
     void processCapturedPixmap(const QPixmap& pixmap);
     void updateHistoryDisplay();
+    void closeDocProgress();
 
     // UI 组件
     QPushButton* closeBtn;
     QPushButton* exportBtn;
+    QPushButton* importBtn;
     QTextEdit* historyTextEdit;   // 替换原来的 QLabel + QScrollArea
     QMenu* contextMenu;
 
@@ -101,6 +106,9 @@ private:
     // 翻译引擎管理器（注册/切换/回退/缓存）
     TranslationEngineManager* engineManager;
 
+    // 文档翻译编排器（逐段串行翻译）
+    DocumentTranslator* docTranslator;
+
     // 插件管理
     PluginManager* pluginManager;
 
@@ -116,6 +124,11 @@ private:
 
     // 最近一条译文（用于"朗读最近一条"）
     QString m_lastTranslated;
+
+    // 文档导入翻译状态
+    QProgressDialog* m_docProgress = nullptr;
+    QString m_docOutputPath;
+    bool m_docTranslating = false;
 
     // 翻译 API 计时起点（毫秒，0 表示未开始）
     qint64 m_translateStartMs = 0;

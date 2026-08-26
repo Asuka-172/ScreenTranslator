@@ -149,9 +149,53 @@ QString buildDocumentXml(const QStringList& entries)
            "<w:body>" + body + "</w:body></w:document>";
 }
 
-} // namespace
+QString runXml(const DocRun& run)
+{
+    QString rpr;
+    if (run.bold)
+        rpr += "<w:b/>";
+    if (run.italic)
+        rpr += "<w:i/>";
+    if (run.underline)
+        rpr += "<w:u w:val=\"single\"/>";
 
-bool DocxExporter::write(const QString& filePath, const QStringList& entries)
+    QString runsXml;
+    const QStringList lines = run.text.split(QLatin1Char('\n'));
+    for (int i = 0; i < lines.size(); ++i) {
+        if (i > 0)
+            runsXml += "<w:r><w:br/></w:r>";
+        runsXml += "<w:r>";
+        if (!rpr.isEmpty())
+            runsXml += "<w:rPr>" + rpr + "</w:rPr>";
+        runsXml += "<w:t xml:space=\"preserve\">" + escapeXml(lines[i]) + "</w:t></w:r>";
+    }
+    return runsXml;
+}
+
+QString paragraphXml(const DocPara& p)
+{
+    QString ppr;
+    if (p.headingLevel >= 1 && p.headingLevel <= 6)
+        ppr = "<w:pPr><w:pStyle w:val=\"Heading" + QString::number(p.headingLevel) + "\"/></w:pPr>";
+
+    QString runs;
+    for (const DocRun& r : p.runs)
+        runs += runXml(r);
+    return "<w:p>" + ppr + runs + "</w:p>";
+}
+
+QString buildStyledDocumentXml(const Document& doc)
+{
+    QString body;
+    for (const DocPara& p : doc.paragraphs)
+        body += paragraphXml(p);
+    return "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+           "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">"
+           "<w:body>" + body + "</w:body></w:document>";
+}
+
+// 将给定的 document.xml 打包为完整 .docx 并写入磁盘
+bool writeDocxFromDocumentXml(const QString& filePath, const QString& documentXml)
 {
     QList<ZipEntry> files;
 
@@ -177,7 +221,7 @@ bool DocxExporter::write(const QString& filePath, const QStringList& entries)
 
     ZipEntry document;
     document.name = "word/document.xml";
-    document.data = buildDocumentXml(entries).toUtf8();
+    document.data = documentXml.toUtf8();
     files.append(document);
 
     QFile file(filePath);
@@ -186,4 +230,16 @@ bool DocxExporter::write(const QString& filePath, const QStringList& entries)
     file.write(buildZip(files));
     file.close();
     return true;
+}
+
+} // namespace
+
+bool DocxExporter::write(const QString& filePath, const QStringList& entries)
+{
+    return writeDocxFromDocumentXml(filePath, buildDocumentXml(entries));
+}
+
+bool DocxExporter::writeDocument(const QString& filePath, const Document& doc)
+{
+    return writeDocxFromDocumentXml(filePath, buildStyledDocumentXml(doc));
 }

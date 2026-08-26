@@ -11,6 +11,8 @@ find_package(tesseract REQUIRED)
 find_package(leptonica REQUIRED)
 find_package(CURL REQUIRED)
 find_package(nlohmann_json REQUIRED)
+find_package(ZLIB REQUIRED)
+find_package(unofficial-poppler CONFIG REQUIRED)
 
 set(SOURCES
     src/main.cpp
@@ -28,6 +30,10 @@ set(SOURCES
     GlobalHotkey.cpp
     PluginManager.cpp
     PluginTranslator.cpp
+    ZipReader.cpp
+    DocumentImporter.cpp
+    DocumentTranslator.cpp
+    DocumentExporter.cpp
 )
 
 set(HEADERS
@@ -47,6 +53,11 @@ set(HEADERS
     PluginManager.h
     PluginTranslator.h
     IPlugin.h
+    Document.h
+    ZipReader.h
+    DocumentImporter.h
+    DocumentTranslator.h
+    DocumentExporter.h
 )
 
 add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${HEADERS})
@@ -63,8 +74,17 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     leptonica
     CURL::libcurl
     nlohmann_json::nlohmann_json
+    ZLIB::ZLIB
+    unofficial::poppler::poppler-cpp
     ole32
 )
+
+# vcpkg 的 unofficial::poppler::poppler-cpp 未导出其 include 目录（头文件位于 include/poppler/cpp），
+# 通过核心 target 的 include 目录补上，使 #include <poppler-document.h> 等平铺写法可用。
+get_target_property(_POPPLER_CORE_INC unofficial::poppler::poppler-private INTERFACE_INCLUDE_DIRECTORIES)
+if(_POPPLER_CORE_INC)
+    target_include_directories(${PROJECT_NAME} PRIVATE "${_POPPLER_CORE_INC}/cpp")
+endif()
 
 # 百度翻译示例插件（独立 .dll）
 add_library(baidu_translate MODULE plugins/BaiduTranslatorPlugin.cpp)
@@ -74,3 +94,4 @@ target_link_libraries(baidu_translate PRIVATE
     CURL::libcurl
 )
 set_target_properties(baidu_translate PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+

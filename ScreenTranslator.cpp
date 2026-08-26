@@ -36,6 +36,10 @@
 #include "CustomOnlineTranslator.h"
 #include "OfflineTranslator.h"
 #include "ITranslator.h"
+#include "DocumentImporter.h"
+#include "DocumentTranslator.h"
+#include "DocumentExporter.h"
+#include <QProgressDialog>
 
 namespace {
 
@@ -127,6 +131,40 @@ ScreenTranslator::ScreenTranslator(QWidget* parent)
     connect(engineManager, &TranslationEngineManager::finished, this, &ScreenTranslator::onTranslationFinished);
     connect(engineManager, &TranslationEngineManager::error, this, &ScreenTranslator::onTranslationError);
 
+    // 初始化文档翻译编排器
+    docTranslator = new DocumentTranslator(engineManager, this);
+    connect(docTranslator, &DocumentTranslator::progress, this, [this](int done, int total) {
+        if (!m_docProgress)
+            return;
+        if (total > 0 && m_docProgress->maximum() != total)
+            m_docProgress->setRange(0, total);
+        m_docProgress->setValue(done);
+        m_docProgress->setLabelText(QStringLiteral("翻译中… %1 / %2").arg(done).arg(total));
+    });
+    connect(docTranslator, &DocumentTranslator::finished, this, [this](const Document& doc) {
+        closeDocProgress();
+        m_docTranslating = false;
+
+        const QString suf = QFileInfo(m_docOutputPath).suffix().toLower();
+        DocumentExporter::Format fmt = (suf == QLatin1String("pdf")) ? DocumentExporter::Format::Pdf
+            : (suf == QLatin1String("docx")) ? DocumentExporter::Format::Docx
+            : DocumentExporter::Format::Txt;
+
+        QString err;
+        const bool ok = DocumentExporter::write(doc, m_docOutputPath, fmt, &err);
+        if (ok)
+            QMessageBox::information(this, QStringLiteral("导入文档"),
+                QStringLiteral("翻译完成，已导出到：\n%1").arg(m_docOutputPath));
+        else
+            QMessageBox::warning(this, QStringLiteral("导入文档"),
+                QStringLiteral("导出失败：%1").arg(err));
+    });
+    connect(docTranslator, &DocumentTranslator::error, this, [this](const QString& msg) {
+        closeDocProgress();
+        m_docTranslating = false;
+        QMessageBox::warning(this, QStringLiteral("导入文档"), QStringLiteral("翻译失败：%1").arg(msg));
+    });
+
     // 初始化 TTS
     tts = new TextToSpeech(this);
     tts->setRate(AppConfig::instance().ttsRate());
@@ -200,7 +238,12 @@ void ScreenTranslator::initUI()
     historyTextEdit->setFrameShape(QFrame::NoFrame);
     layout->addWidget(historyTextEdit, 1);
 
-    // ---- 底部导出按钮（右下角） ----
+    // ---- 底部导入/导出按钮（右下角） ----
+    importBtn = new QPushButton("导入文件", this);
+    importBtn->setAccessibleName("导入文件");
+    importBtn->setCursor(Qt::PointingHandCursor);
+    connect(importBtn, &QPushButton::clicked, this, &ScreenTranslator::importDocument);
+
     exportBtn = new QPushButton("导出记录", this);
     exportBtn->setAccessibleName("导出记录");
     exportBtn->setCursor(Qt::PointingHandCursor);
@@ -208,6 +251,7 @@ void ScreenTranslator::initUI()
 
     QHBoxLayout* bottomLayout = new QHBoxLayout();
     bottomLayout->addStretch();
+    bottomLayout->addWidget(importBtn);
     bottomLayout->addWidget(exportBtn);
     bottomLayout->setContentsMargins(0, 0, 0, 0);
     layout->addLayout(bottomLayout);
@@ -219,6 +263,8 @@ void ScreenTranslator::initUI()
     QAction* copyAllAct = contextMenu->addAction("复制全部记录");
     connect(copyAllAct, &QAction::triggered, this, &ScreenTranslator::copyAllRecords);
     contextMenu->addSeparator();
+    QAction* importDocAct = contextMenu->addAction("导入文档翻译");
+    connect(importDocAct, &QAction::triggered, this, &ScreenTranslator::importDocument);
     QAction* settingsAct = contextMenu->addAction("设置");
     connect(settingsAct, &QAction::triggered, this, &ScreenTranslator::openSettings);
     QAction* clearAct = contextMenu->addAction("清空记录");
@@ -414,6 +460,73 @@ void ScreenTranslator::exportRecords()
         QMessageBox::warning(this, "导出记录", "导出失败，请检查路径或权限。");
 }
 
+void ScreenTranslator::closeDocProgress()
+{
+    if (!m_docProgress)
+        return;
+    QProgressDialog* d = m_docProgress;
+    m_docProgress = nullptr;   // 先置空，避免重入/重复释放
+    d->close();
+    d->deleteLater();
+}
+
+void ScreenTranslator::importDocument()
+{
+    if (m_docTranslating) {
+        QMessageBox::information(this, "导入文档", "已有文档正在翻译中。");
+        return;
+    }
+
+    const QString inputPath = QFileDialog::getOpenFileName(this, "选择要翻译的文档", QString(),
+        "文档 (*.pdf *.docx *.txt);;PDF (*.pdf);;Word (*.docx);;文本 (*.txt)");
+    if (inputPath.isEmpty())
+        return;
+
+    QString err;
+    Document doc = DocumentImporter::import(inputPath, &err);
+    if (!err.isEmpty()) {
+        QMessageBox::warning(this, "导入文档", err);
+        return;
+    }
+    if (doc.paragraphs.isEmpty()) {
+        QMessageBox::warning(this, "导入文档", "未能从文件中提取到文本。");
+        return;
+    }
+
+    const QString suggested = QFileInfo(inputPath).completeBaseName() + "_译文";
+    const QString filter = "Word 文档 (*.docx);;PDF (*.pdf);;文本 (*.txt)";
+    QString selectedFilter;
+    QString outputPath = QFileDialog::getSaveFileName(this, "保存译文", suggested, filter, &selectedFilter);
+    if (outputPath.isEmpty())
+        return;
+
+    QString ext;
+    if (selectedFilter.contains("pdf")) ext = ".pdf";
+    else if (selectedFilter.contains("docx")) ext = ".docx";
+    else ext = ".txt";
+
+    if (QFileInfo(outputPath).suffix().isEmpty())
+        outputPath += ext;
+
+    m_docOutputPath = outputPath;
+    m_docTranslating = true;
+
+    m_docProgress = new QProgressDialog("翻译中…", "取消", 0, 0, this);
+    m_docProgress->setWindowTitle("文档翻译");
+    m_docProgress->setWindowModality(Qt::WindowModal);
+    m_docProgress->setMinimumDuration(0);
+    m_docProgress->setAutoClose(false);
+    m_docProgress->setAutoReset(false);
+    connect(m_docProgress, &QProgressDialog::canceled, this, [this]() {
+        docTranslator->cancel();
+        m_docTranslating = false;
+        closeDocProgress();
+    });
+    m_docProgress->show();
+
+    docTranslator->start(doc, m_sourceLang, m_targetLang);
+}
+
 void ScreenTranslator::contextMenuEvent(QContextMenuEvent* event)
 {
     contextMenu->exec(event->globalPos());
@@ -546,6 +659,9 @@ void ScreenTranslator::updateHistoryDisplay()
 
 void ScreenTranslator::onTranslationFinished(const QString& translatedText, const QString& detectedLang)
 {
+    if (m_docTranslating)
+        return;
+
     if (m_translateStartMs > 0)
         qDebug() << "[perf] translate took" << (QDateTime::currentMSecsSinceEpoch() - m_translateStartMs) << "ms";
 
@@ -564,6 +680,9 @@ void ScreenTranslator::onTranslationFinished(const QString& translatedText, cons
 
 void ScreenTranslator::onTranslationError(const QString& errorMessage)
 {
+    if (m_docTranslating)
+        return;
+
     if (m_translateStartMs > 0)
         qDebug() << "[perf] translate (error) took" << (QDateTime::currentMSecsSinceEpoch() - m_translateStartMs) << "ms";
 
