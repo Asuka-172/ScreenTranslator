@@ -1,6 +1,7 @@
 # Build output
 /out/
 /build/
+/dist/
 build-*/
 
 # Visual Studio / CMake generated

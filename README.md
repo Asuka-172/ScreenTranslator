@@ -15,6 +15,7 @@
 - **主题系统**：深色 / 浅色 / 高对比度三套主题，字体、字号、窗口透明度可调
 - **插件系统**：`IPlugin` 接口 + `QLibrary` 动态加载 `.dll`，内置百度翻译示例插件
 - **历史记录与导出**：悬浮窗展示翻译历史，底部按钮导出为 `.txt` 或 `.docx`
+- **文档翻译**：导入 `.pdf` / `.docx` / `.txt` 整篇文档，逐段翻译并导出为 `.docx` / `.pdf` / `.txt`，保留标题层级与加粗/斜体
 
 ## 使用说明
 
@@ -25,6 +26,7 @@
 | 打开设置 | `F4` |
 | 取消截图 | `Esc` |
 | 导出记录 | 窗口底部按钮（.txt / .docx） |
+| 文档翻译 | 底部「导入文件」按钮或右键菜单「导入文档翻译」 |
 | 复制/清空/设置/退出 | 窗口内右键菜单 |
 
 所有热键可在设置页「全局热键」中自定义；主题、字体、透明度、TTS 等在设置页调整后即时生效并持久化。
@@ -37,6 +39,7 @@
 - **Windows SAPI**（COM）— 语音合成（TTS）
 - **Windows RegisterHotKey** — 系统级全局热键
 - **CURL / nlohmann_json** — 依赖库（插件 HTTP 请求等）
+- **poppler / zlib** — PDF 文本提取与 docx（zip 容器）解压
 
 ## 插件
 
@@ -61,7 +64,7 @@
 - [vcpkg](https://github.com/microsoft/vcpkg) 及以下包：
 
 ```bash
-vcpkg install opencv tesseract leptonica curl nlohmann-json --triplet x64-windows
+vcpkg install opencv tesseract leptonica curl nlohmann-json zlib poppler --triplet x64-windows
 ```
 
 - Qt 6（MSVC 2022 版本）
