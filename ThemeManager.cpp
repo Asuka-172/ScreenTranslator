@@ -17,8 +17,38 @@ QPushButton#CloseButton { background: rgba(255,255,255,180); color: black; borde
 QPushButton#CloseButton:hover { background: rgba(255,0,0,180); color: white; }
 QMenu { background: #2B2B2B; color: #E0E0E0; border: 1px solid #444; }
 QMenu::item:selected { background: #3A3A3A; }
-QComboBox { background: #2B2B2B; color: #E0E0E0; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; }
-QComboBox QAbstractItemView { background: #2B2B2B; color: #E0E0E0; selection-background-color: #3A3A3A; }
+/* 输入控件：白底黑字，字号随应用全局设置；边框与内边距统一，保证文字垂直居中并与标签对齐。
+   QKeySequenceEdit 本体不绘制 QSS 背景/边框（无 WA_StyledBackground），
+   需对内部 QLineEdit 应用完整输入框样式，否则只显示文字、看不到输入框。 */
+QLineEdit {
+    background: #FFFFFF; color: #000000;
+    border: 1px solid #888888; border-radius: 4px; padding: 4px 8px;
+    selection-background-color: #3399FF; selection-color: #FFFFFF;
+}
+QAbstractSpinBox {
+    background: #FFFFFF; color: #000000;
+    border: 1px solid #888888; border-radius: 4px; padding: 4px 8px;
+}
+QAbstractSpinBox QLineEdit { background: transparent; border: none; padding: 0; }
+QComboBox, QFontComboBox {
+    background: #FFFFFF; color: #000000;
+    border: 1px solid #888888; border-radius: 4px; padding: 4px 8px;
+}
+QComboBox QAbstractItemView {
+    background: #FFFFFF; color: #000000;
+    selection-background-color: #3399FF; selection-color: #FFFFFF;
+}
+QKeySequenceEdit QLineEdit {
+    background: #FFFFFF; color: #000000;
+    border: 1px solid #888888; border-radius: 4px; padding: 4px 8px;
+    selection-background-color: #3399FF; selection-color: #FFFFFF;
+}
+QListWidget {
+    background: #FFFFFF; color: #000000;
+    border: 1px solid #888888; border-radius: 4px; padding: 4px;
+}
+QListWidget::item { padding: 4px 6px; }
+QListWidget::item:selected { background: #3399FF; color: #FFFFFF; }
 QCheckBox { background: transparent; color: #E0E0E0; }
 QSlider::groove:horizontal { height: 4px; background: #444; border-radius: 2px; }
 QSlider::handle:horizontal { width: 14px; height: 14px; margin: -5px 0; background: #FFFFFF; border-radius: 7px; }
@@ -31,6 +61,9 @@ QScrollBar::add-line, QScrollBar::sub-line { height: 0px; }
 QScrollBar:horizontal { background: transparent; height: 8px; }
 QScrollBar::handle:horizontal { background: rgba(255,255,255,80); border-radius: 4px; min-width: 20px; }
 QDialog { background: #2B2B2B; }
+QScrollArea { background: transparent; border: none; }
+QScrollArea > QWidget { background: transparent; }
+QScrollArea > QWidget > QWidget { background: transparent; }
 )";
 }
 
@@ -48,8 +81,40 @@ QPushButton#CloseButton { background: rgba(0,0,0,180); color: white; border: non
 QPushButton#CloseButton:hover { background: rgba(255,0,0,180); color: white; }
 QMenu { background: #FFFFFF; color: #202020; border: 1px solid #CCC; }
 QMenu::item:selected { background: #E8E8E8; }
-QComboBox { background: #FFFFFF; color: #202020; border: 1px solid #CCC; border-radius: 4px; padding: 4px 8px; }
-QComboBox QAbstractItemView { background: #FFFFFF; color: #202020; selection-background-color: #E8E8E8; }
+/* 输入控件：黑字白底，字号随应用全局设置；边框与内边距统一 */
+QLineEdit {
+    background: #FFFFFF; color: #000000;
+    border: 1px solid #999999; border-radius: 4px; padding: 4px 8px;
+    selection-background-color: #3399FF; selection-color: #FFFFFF;
+}
+QAbstractSpinBox {
+    background: #FFFFFF; color: #000000;
+    border: 1px solid #999999; border-radius: 4px; padding: 4px 8px;
+}
+QAbstractSpinBox QLineEdit { background: transparent; border: none; padding: 0; }
+QComboBox, QFontComboBox {
+    background: #FFFFFF; color: #000000;
+    border: 1px solid #999999; border-radius: 4px; padding: 4px 8px;
+}
+QComboBox QAbstractItemView {
+    background: #FFFFFF; color: #000000;
+    selection-background-color: #3399FF; selection-color: #FFFFFF;
+}
+QKeySequenceEdit QLineEdit {
+    background: #FFFFFF; color: #000000;
+    border: 1px solid #999999; border-radius: 4px; padding: 4px 8px;
+    selection-background-color: #3399FF; selection-color: #FFFFFF;
+}
+QListWidget {
+    background: #FFFFFF; color: #000000;
+    border: 1px solid #999999; border-radius: 4px; padding: 4px;
+}
+QListWidget::item { padding: 4px 6px; }
+QListWidget::item:selected { background: #3399FF; color: #FFFFFF; }
+QComboBox QAbstractItemView {
+    background: #FFFFFF; color: #000000;
+    selection-background-color: #3399FF; selection-color: #FFFFFF;
+}
 QCheckBox { background: transparent; color: #202020; }
 QSlider::groove:horizontal { height: 4px; background: #CCC; border-radius: 2px; }
 QSlider::handle:horizontal { width: 14px; height: 14px; margin: -5px 0; background: #606060; border-radius: 7px; }
@@ -62,6 +127,9 @@ QScrollBar::add-line, QScrollBar::sub-line { height: 0px; }
 QScrollBar:horizontal { background: transparent; height: 8px; }
 QScrollBar::handle:horizontal { background: rgba(0,0,0,60); border-radius: 4px; min-width: 20px; }
 QDialog { background: #F0F0F0; }
+QScrollArea { background: transparent; border: none; }
+QScrollArea > QWidget { background: transparent; }
+QScrollArea > QWidget > QWidget { background: transparent; }
 )";
 }
 
@@ -79,8 +147,36 @@ QPushButton#CloseButton { background: #000000; color: #FFFF00; border: 2px solid
 QPushButton#CloseButton:hover { background: #FFFF00; color: #000000; }
 QMenu { background: #000000; color: #FFFF00; border: 2px solid #FFFF00; }
 QMenu::item:selected { background: #FFFF00; color: #000000; }
-QComboBox { background: #000000; color: #FFFF00; border: 2px solid #FFFF00; border-radius: 4px; padding: 4px 8px; }
-QComboBox QAbstractItemView { background: #000000; color: #FFFF00; selection-background-color: #FFFF00; selection-color: #000000; }
+/* 输入控件：黑字白底，黄色边框保持高对比；字号随应用全局设置 */
+QLineEdit {
+    background: #FFFFFF; color: #000000;
+    border: 2px solid #FFFF00; border-radius: 4px; padding: 4px 8px;
+    selection-background-color: #FFFF00; selection-color: #000000;
+}
+QAbstractSpinBox {
+    background: #FFFFFF; color: #000000;
+    border: 2px solid #FFFF00; border-radius: 4px; padding: 4px 8px;
+}
+QAbstractSpinBox QLineEdit { background: transparent; border: none; padding: 0; }
+QComboBox, QFontComboBox {
+    background: #FFFFFF; color: #000000;
+    border: 2px solid #FFFF00; border-radius: 4px; padding: 4px 8px;
+}
+QComboBox QAbstractItemView {
+    background: #FFFFFF; color: #000000;
+    selection-background-color: #FFFF00; selection-color: #000000;
+}
+QKeySequenceEdit QLineEdit {
+    background: #FFFFFF; color: #000000;
+    border: 2px solid #FFFF00; border-radius: 4px; padding: 4px 8px;
+    selection-background-color: #FFFF00; selection-color: #000000;
+}
+QListWidget {
+    background: #FFFFFF; color: #000000;
+    border: 2px solid #FFFF00; border-radius: 4px; padding: 4px;
+}
+QListWidget::item { padding: 4px 6px; }
+QListWidget::item:selected { background: #FFFF00; color: #000000; }
 QCheckBox { background: transparent; color: #FFFF00; }
 QSlider::groove:horizontal { height: 4px; background: #FFFF00; border-radius: 2px; }
 QSlider::handle:horizontal { width: 14px; height: 14px; margin: -5px 0; background: #FFFF00; border: 1px solid #000000; border-radius: 7px; }
@@ -93,6 +189,9 @@ QScrollBar::add-line, QScrollBar::sub-line { height: 0px; }
 QScrollBar:horizontal { background: transparent; height: 10px; }
 QScrollBar::handle:horizontal { background: #FFFF00; border-radius: 5px; min-width: 20px; }
 QDialog { background: #000000; }
+QScrollArea { background: transparent; border: none; }
+QScrollArea > QWidget { background: transparent; }
+QScrollArea > QWidget > QWidget { background: transparent; }
 )";
 }
 

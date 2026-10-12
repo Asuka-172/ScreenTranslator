@@ -43,14 +43,15 @@ QString OfflineTranslator::resolvedGlossaryPath() const
 
 void OfflineTranslator::translate(const QString& text,
     const QString& sourceLang,
-    const QString& targetLang)
+    const QString& targetLang,
+    quint64 requestId)
 {
     Q_UNUSED(sourceLang);
     Q_UNUSED(targetLang);
 
     if (!AppConfig::instance().offlineEnabled()) {
-        QMetaObject::invokeMethod(this, [this]() {
-            emit error(QStringLiteral("离线翻译未启用，请在设置中开启"));
+        QMetaObject::invokeMethod(this, [this, requestId]() {
+            emit error(QStringLiteral("离线翻译未启用，请在设置中开启"), requestId);
         }, Qt::QueuedConnection);
         return;
     }
@@ -61,8 +62,8 @@ void OfflineTranslator::translate(const QString& text,
     for (const auto& entry : m_entries)
         result.replace(entry.first, entry.second, Qt::CaseSensitive);
 
-    QMetaObject::invokeMethod(this, [this, result]() {
-        emit finished(result, QString());
+    QMetaObject::invokeMethod(this, [this, result, requestId]() {
+        emit finished(result, QString(), requestId);
     }, Qt::QueuedConnection);
 }
 

@@ -1,7 +1,6 @@
 #include "BaiduTranslatorPlugin.h"
 
 #include <QUrl>
-#include <QUrlQuery>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -55,15 +54,19 @@ QString BaiduTranslatorPlugin::translate(const QString& text, const QString& sou
     const QString salt = QString::number(QDateTime::currentMSecsSinceEpoch());
     const QString sign = md5(appid + text + salt + secret);
 
-    QUrl url(QStringLiteral("https://fanyi-api.baidu.com/api/trans/vip/translate"));
-    QUrlQuery query;
-    query.addQueryItem("q", text);
-    query.addQueryItem("from", baiduLang(sourceLang));
-    query.addQueryItem("to", baiduLang(targetLang));
-    query.addQueryItem("appid", appid);
-    query.addQueryItem("salt", salt);
-    query.addQueryItem("sign", sign);
-    url.setQuery(query);
+    // 显式按 RFC 3986 编码每个参数：QUrl::toEncoded() 会把 '+' 保留为字面量，
+    // 而百度按 form-urlencoded 语义把 '+' 解析为空格，导致签名重算不一致（54001）。
+    const auto enc = [](const QString& s) {
+        return QString::fromLatin1(QUrl::toPercentEncoding(s));
+    };
+    const QString queryStr = QStringLiteral("q=") + enc(text)
+        + QStringLiteral("&from=") + enc(baiduLang(sourceLang))
+        + QStringLiteral("&to=") + enc(baiduLang(targetLang))
+        + QStringLiteral("&appid=") + enc(appid)
+        + QStringLiteral("&salt=") + enc(salt)
+        + QStringLiteral("&sign=") + enc(sign);
+    const QByteArray urlBytes =
+        (QStringLiteral("https://fanyi-api.baidu.com/api/trans/vip/translate?") + queryStr).toUtf8();
 
     CURL* curl = curl_easy_init();
     if (!curl) {
@@ -72,7 +75,6 @@ QString BaiduTranslatorPlugin::translate(const QString& text, const QString& sou
     }
 
     QByteArray response;
-    const QByteArray urlBytes = url.toEncoded();
     curl_easy_setopt(curl, CURLOPT_URL, urlBytes.constData());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);

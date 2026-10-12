@@ -13,6 +13,7 @@ struct DocRun
     bool bold = false;
     bool italic = false;
     bool underline = false;
+    bool formula = false; // 数学公式/符号 run：翻译时原样保留，不送引擎
 };
 
 struct DocPara

@@ -19,7 +19,8 @@ QString TranslationService::name() const
 
 void TranslationService::translate(const QString& text,
     const QString& sourceLang,
-    const QString& targetLang)
+    const QString& targetLang,
+    quint64 requestId)
 {
     QUrl url("https://translate.googleapis.com/translate_a/single");
     QUrlQuery query;
@@ -30,8 +31,6 @@ void TranslationService::translate(const QString& text,
     query.addQueryItem("q", text);
     url.setQuery(query);
 
-    qDebug() << "Translation URL:" << url.toString();
-
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/x-www-form-urlencoded");
 
@@ -40,6 +39,7 @@ void TranslationService::translate(const QString& text,
     request.setSslConfiguration(sslConfig);
 
     QNetworkReply* reply = networkManager->get(request);
+    m_pending.insert(reply, requestId);
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         onReplyFinished(reply);
         });
@@ -47,10 +47,11 @@ void TranslationService::translate(const QString& text,
 
 void TranslationService::onReplyFinished(QNetworkReply* reply)
 {
+    const quint64 requestId = m_pending.take(reply);
     reply->deleteLater();
 
     if (reply->error() != QNetworkReply::NoError) {
-        emit error(reply->errorString());
+        emit error(reply->errorString(), requestId);
         return;
     }
 
@@ -60,19 +61,19 @@ void TranslationService::onReplyFinished(QNetworkReply* reply)
     // 取第一个部分的第一个数组的第一个元素。
     QJsonDocument doc = QJsonDocument::fromJson(responseData);
     if (!doc.isArray()) {
-        emit error("Invalid response format");
+        emit error("Invalid response format", requestId);
         return;
     }
 
     QJsonArray rootArray = doc.array();
     if (rootArray.isEmpty() || !rootArray[0].isArray()) {
-        emit error("Empty translation result");
+        emit error("Empty translation result", requestId);
         return;
     }
 
     QJsonArray firstSegment = rootArray[0].toArray();
     if (firstSegment.isEmpty() || !firstSegment[0].isArray()) {
-        emit error("No translation segments");
+        emit error("No translation segments", requestId);
         return;
     }
 
@@ -92,9 +93,9 @@ void TranslationService::onReplyFinished(QNetworkReply* reply)
     }
 
     if (translatedText.isEmpty()) {
-        emit error("Translation empty");
+        emit error("Translation empty", requestId);
         return;
     }
 
-    emit finished(translatedText, detectedLang);
+    emit finished(translatedText, detectedLang, requestId);
 }

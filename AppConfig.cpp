@@ -55,6 +55,12 @@ void AppConfig::ensureDefaults()
     setDefault("fallbackEnabled", false);
     setDefault("cacheEnabled", true);
     setDefault("cacheMaxEntries", 500);
+    setDefault("docChunkMaxBytes", 6000);
+    setDefault("docRetryMax", 3);
+    setDefault("docRetryBaseMs", 1000);
+    setDefault("docMinIntervalMs", 0);
+    setDefault("docConcurrency", 3);
+    setDefault("resumeEnabled", true);
 }
 
 QVariant AppConfig::value(const QString& key, const QVariant& def) const
@@ -133,6 +139,24 @@ void AppConfig::setCacheEnabled(bool e) { setValue("cacheEnabled", e); }
 
 int AppConfig::cacheMaxEntries() const { return m_settings.value("cacheMaxEntries", 500).toInt(); }
 void AppConfig::setCacheMaxEntries(int n) { setValue("cacheMaxEntries", n); }
+
+int AppConfig::docChunkMaxBytes() const { return m_settings.value("docChunkMaxBytes", 6000).toInt(); }
+void AppConfig::setDocChunkMaxBytes(int n) { setValue("docChunkMaxBytes", n); }
+
+int AppConfig::docRetryMax() const { return m_settings.value("docRetryMax", 3).toInt(); }
+void AppConfig::setDocRetryMax(int n) { setValue("docRetryMax", n); }
+
+int AppConfig::docRetryBaseMs() const { return m_settings.value("docRetryBaseMs", 1000).toInt(); }
+void AppConfig::setDocRetryBaseMs(int n) { setValue("docRetryBaseMs", n); }
+
+int AppConfig::docMinIntervalMs() const { return m_settings.value("docMinIntervalMs", 0).toInt(); }
+void AppConfig::setDocMinIntervalMs(int n) { setValue("docMinIntervalMs", n); }
+
+int AppConfig::docConcurrency() const { return m_settings.value("docConcurrency", 3).toInt(); }
+void AppConfig::setDocConcurrency(int n) { setValue("docConcurrency", n); }
+
+bool AppConfig::resumeEnabled() const { return m_settings.value("resumeEnabled", true).toBool(); }
+void AppConfig::setResumeEnabled(bool e) { setValue("resumeEnabled", e); }
 
 QString AppConfig::hotkey(const QString& action) const
 {

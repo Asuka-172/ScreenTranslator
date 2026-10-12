@@ -16,7 +16,8 @@ public:
     explicit OfflineTranslator(QObject* parent = nullptr);
 
     QString name() const override;
-    void translate(const QString& text, const QString& sourceLang, const QString& targetLang) override;
+    void translate(const QString& text, const QString& sourceLang, const QString& targetLang,
+                   quint64 requestId) override;
 
     void reloadGlossary();
     QStringList listModelFiles() const;

@@ -73,6 +73,20 @@ public:
     int cacheMaxEntries() const;
     void setCacheMaxEntries(int n);
 
+    // 文档翻译（长文）
+    int docChunkMaxBytes() const;          // 单请求分块字节上限，默认 6000
+    void setDocChunkMaxBytes(int n);
+    int docRetryMax() const;               // 可重试错误的最大重试次数，默认 3
+    void setDocRetryMax(int n);
+    int docRetryBaseMs() const;            // 重试退避基础间隔 ms，默认 1000
+    void setDocRetryBaseMs(int n);
+    int docMinIntervalMs() const;          // 引擎请求最小间隔 ms，0=不限（百度标准版建议 1100）
+    void setDocMinIntervalMs(int n);
+    int docConcurrency() const;            // 文档翻译并发路数，默认 3
+    void setDocConcurrency(int n);
+    bool resumeEnabled() const;            // 启用断点续传
+    void setResumeEnabled(bool e);
+
     // 全局热键（action -> QKeySequence 字符串）
     QString hotkey(const QString& action) const;
     void setHotkey(const QString& action, const QString& seq);

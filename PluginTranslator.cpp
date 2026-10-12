@@ -14,21 +14,22 @@ QString PluginTranslator::name() const
     return m_plugin ? m_plugin->name() : QString();
 }
 
-void PluginTranslator::translate(const QString& text, const QString& sourceLang, const QString& targetLang)
+void PluginTranslator::translate(const QString& text, const QString& sourceLang, const QString& targetLang,
+                                 quint64 requestId)
 {
     if (!m_plugin)
         return;
 
     ITranslatorPlugin* plugin = m_plugin;
-    std::async(std::launch::async, [this, plugin, text, sourceLang, targetLang]() {
+    std::async(std::launch::async, [this, plugin, text, sourceLang, targetLang, requestId]() {
         QString err;
         const QString result = plugin->translate(text, sourceLang, targetLang, err);
 
-        QMetaObject::invokeMethod(this, [this, result, err]() {
+        QMetaObject::invokeMethod(this, [this, result, err, requestId]() {
             if (result.isEmpty() && !err.isEmpty())
-                emit error(err);
+                emit error(err, requestId);
             else
-                emit finished(result, QString());
+                emit finished(result, QString(), requestId);
         }, Qt::QueuedConnection);
     });
 }

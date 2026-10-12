@@ -34,6 +34,7 @@ set(SOURCES
     DocumentImporter.cpp
     DocumentTranslator.cpp
     DocumentExporter.cpp
+    DocOutputSession.cpp
 )
 
 set(HEADERS
@@ -58,6 +59,7 @@ set(HEADERS
     DocumentImporter.h
     DocumentTranslator.h
     DocumentExporter.h
+    DocOutputSession.h
 )
 
 add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${HEADERS})

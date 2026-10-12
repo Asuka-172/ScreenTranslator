@@ -19,9 +19,22 @@ QString paraText(const DocPara& p)
     return out;
 }
 
+QString stripControlChars(const QString& s)
+{
+    QString out;
+    out.reserve(s.size());
+    for (const QChar c : s) {
+        const ushort u = c.unicode();
+        if (u < 0x20 && u != 0x09 && u != 0x0A && u != 0x0D)
+            continue;
+        out.append(c);
+    }
+    return out;
+}
+
 QString escapeHtml(const QString& s)
 {
-    QString out = s;
+    QString out = stripControlChars(s);
     out.replace(QLatin1Char('&'), QStringLiteral("&amp;"));
     out.replace(QLatin1Char('<'), QStringLiteral("&lt;"));
     out.replace(QLatin1Char('>'), QStringLiteral("&gt;"));
@@ -62,7 +75,7 @@ bool writeTxt(const Document& doc, const QString& path, QString* err)
 
     QStringList blocks;
     for (const DocPara& p : doc.paragraphs) {
-        QString text = paraText(p);
+        QString text = stripControlChars(paraText(p));
         if (p.headingLevel >= 1 && p.headingLevel <= 6) {
             QString marker(p.headingLevel, QLatin1Char('#'));
             marker += QLatin1Char(' ');

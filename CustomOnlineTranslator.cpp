@@ -25,12 +25,13 @@ QString CustomOnlineTranslator::name() const
 
 void CustomOnlineTranslator::translate(const QString& text,
     const QString& sourceLang,
-    const QString& targetLang)
+    const QString& targetLang,
+    quint64 requestId)
 {
     AppConfig& cfg = AppConfig::instance();
     const QString urlTemplate = cfg.customEngineUrl().trimmed();
     if (urlTemplate.isEmpty()) {
-        emit error(QStringLiteral("未配置自定义引擎 URL，请在设置中填写"));
+        emit error(QStringLiteral("未配置自定义引擎 URL，请在设置中填写"), requestId);
         return;
     }
 
@@ -57,6 +58,7 @@ void CustomOnlineTranslator::translate(const QString& text,
     request.setSslConfiguration(sslConfig);
 
     QNetworkReply* reply = m_nm->get(request);
+    m_pending.insert(reply, requestId);
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         onReplyFinished(reply);
     });
@@ -64,10 +66,11 @@ void CustomOnlineTranslator::translate(const QString& text,
 
 void CustomOnlineTranslator::onReplyFinished(QNetworkReply* reply)
 {
+    const quint64 requestId = m_pending.take(reply);
     reply->deleteLater();
 
     if (reply->error() != QNetworkReply::NoError) {
-        emit error(reply->errorString());
+        emit error(reply->errorString(), requestId);
         return;
     }
 
@@ -76,11 +79,11 @@ void CustomOnlineTranslator::onReplyFinished(QNetworkReply* reply)
     const QString result = extractByPath(data, path);
 
     if (result.isEmpty()) {
-        emit error(QStringLiteral("翻译结果为空（请检查结果路径配置）"));
+        emit error(QStringLiteral("翻译结果为空（请检查结果路径配置）"), requestId);
         return;
     }
 
-    emit finished(result, QString());
+    emit finished(result, QString(), requestId);
 }
 
 // 从 JSON 响应中按点分路径（对象键 + 数字数组下标）提取译文。

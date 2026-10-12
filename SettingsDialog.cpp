@@ -25,6 +25,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
+#include <QScrollArea>
+#include <QFrame>
 
 namespace {
 
@@ -45,16 +47,13 @@ QWidget* placeholderPage(const QString& title, const QString& hint)
 
 QLineEdit* makeEngineLineEdit(QWidget* parent)
 {
-    const int appSize = AppConfig::instance().fontSize();
-
+    // 输入框样式（白底黑字/边框/内边距）由应用级 QSS 统一提供，
+    // 这里只设置与应用一致的字号与最小高度，保证文字垂直居中、与标签对齐。
     QLineEdit* e = new QLineEdit(parent);
-    e->setStyleSheet(
-        QStringLiteral("QLineEdit { background: #FFFFFF; color: #000000;"
-                       " border: 1px solid #888888; border-radius: 4px; padding: 4px 8px;"
-                       " font-size: %1pt; }").arg(qMax(1, appSize - 1)));
 
     QFont boxFont = e->font();
-    boxFont.setPointSize(appSize);
+    boxFont.setPointSize(AppConfig::instance().fontSize());
+    e->setFont(boxFont);
     const QFontMetrics fm(boxFont);
     e->setMinimumHeight(fm.height() + 10);
     return e;
@@ -65,12 +64,12 @@ QDialog* buildEngineConfigDialog(const QString& engineId, QWidget* parent)
     QDialog* dlg = new QDialog(parent);
     dlg->setWindowTitle("引擎配置");
     dlg->setMinimumWidth(440);
-    dlg->setStyleSheet("QLabel { color: #AAAAAA; }");
 
     QVBoxLayout* lay = new QVBoxLayout(dlg);
 
     if (engineId == QLatin1String("custom")) {
         QFormLayout* f = new QFormLayout();
+        f->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
         lay->addLayout(f);
 
         QLineEdit* urlEdit = makeEngineLineEdit(dlg);
@@ -126,6 +125,7 @@ QDialog* buildEngineConfigDialog(const QString& engineId, QWidget* parent)
         f->addRow(hint);
     } else if (engineId == QLatin1String("offline")) {
         QFormLayout* f = new QFormLayout();
+        f->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
         lay->addLayout(f);
 
         QCheckBox* enableCheck = new QCheckBox("启用离线翻译（本地词典）", dlg);
@@ -173,6 +173,7 @@ QDialog* buildEngineConfigDialog(const QString& engineId, QWidget* parent)
         f->addRow(fmtHint);
     } else if (engineId == QStringLiteral("百度翻译")) {
         QFormLayout* f = new QFormLayout();
+        f->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
         lay->addLayout(f);
 
         QLineEdit* appIdEdit = makeEngineLineEdit(dlg);
@@ -411,11 +412,18 @@ QWidget* SettingsDialog::createTranslationPage()
 {
     QWidget* page = new QWidget;
     QVBoxLayout* lay = new QVBoxLayout(page);
+    lay->setContentsMargins(8, 8, 8, 8);
+    lay->setSpacing(10);
+
+    // 输入控件高度对齐「四号」（应用默认 14pt）字高，避免内容紧凑、控件高低不一
+    const int inputH = QFontMetrics(
+        QFont(AppConfig::instance().fontFamily(), AppConfig::instance().fontSize())).height() + 14;
 
     QGroupBox* engineGroup = new QGroupBox("翻译引擎", page);
     QVBoxLayout* engineLay = new QVBoxLayout(engineGroup);
 
     m_engineCombo = new QComboBox(engineGroup);
+    m_engineCombo->setMinimumHeight(inputH);
     engineLay->addWidget(m_engineCombo);
 
     QLabel* cfgTip = new QLabel("切换引擎后，将在新窗口中进行配置。", engineGroup);
@@ -434,6 +442,7 @@ QWidget* SettingsDialog::createTranslationPage()
     });
 
     QPushButton* testBtn = new QPushButton("测试翻译", engineGroup);
+    testBtn->setMinimumHeight(inputH);
     QObject::connect(testBtn, &QPushButton::clicked, this, [this]() {
         emit testTranslationRequested(m_engineCombo->currentData().toString());
     });
@@ -463,6 +472,7 @@ QWidget* SettingsDialog::createTranslationPage()
     QSpinBox* maxSpin = new QSpinBox(cacheGroup);
     maxSpin->setRange(0, 10000);
     maxSpin->setValue(AppConfig::instance().cacheMaxEntries());
+    maxSpin->setMinimumHeight(inputH);
     QObject::connect(maxSpin, &QSpinBox::valueChanged, maxSpin, [](int v) {
         AppConfig::instance().setCacheMaxEntries(v);
     });
@@ -476,6 +486,7 @@ QWidget* SettingsDialog::createTranslationPage()
     exportCombo->addItem("docx", "docx");
     exportCombo->addItem("md", "md");
     exportCombo->addItem("csv", "csv");
+    exportCombo->setMinimumHeight(inputH);
     int idx = exportCombo->findData(AppConfig::instance().exportFormat());
     if (idx >= 0) exportCombo->setCurrentIndex(idx);
     QObject::connect(exportCombo, &QComboBox::currentIndexChanged, exportCombo, [exportCombo](int) {
@@ -484,8 +495,82 @@ QWidget* SettingsDialog::createTranslationPage()
     exportForm->addRow("格式", exportCombo);
     lay->addWidget(exportGroup);
 
+    QGroupBox* docGroup = new QGroupBox("文档翻译（长文）", page);
+    QFormLayout* docForm = new QFormLayout(docGroup);
+    docForm->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+
+    QSpinBox* chunkSpin = new QSpinBox(docGroup);
+    chunkSpin->setRange(500, 20000);
+    chunkSpin->setSingleStep(500);
+    chunkSpin->setValue(AppConfig::instance().docChunkMaxBytes());
+    chunkSpin->setMinimumHeight(inputH);
+    QObject::connect(chunkSpin, &QSpinBox::valueChanged, chunkSpin, [](int v) {
+        AppConfig::instance().setDocChunkMaxBytes(v);
+    });
+    docForm->addRow("分块字节上限", chunkSpin);
+
+    QSpinBox* concSpin = new QSpinBox(docGroup);
+    concSpin->setRange(1, 8);
+    concSpin->setValue(AppConfig::instance().docConcurrency());
+    concSpin->setMinimumHeight(inputH);
+    QObject::connect(concSpin, &QSpinBox::valueChanged, concSpin, [](int v) {
+        AppConfig::instance().setDocConcurrency(v);
+    });
+    docForm->addRow("并发路数", concSpin);
+
+    QSpinBox* retrySpin = new QSpinBox(docGroup);
+    retrySpin->setRange(0, 10);
+    retrySpin->setValue(AppConfig::instance().docRetryMax());
+    retrySpin->setMinimumHeight(inputH);
+    QObject::connect(retrySpin, &QSpinBox::valueChanged, retrySpin, [](int v) {
+        AppConfig::instance().setDocRetryMax(v);
+    });
+    docForm->addRow("失败重试次数", retrySpin);
+
+    QSpinBox* baseSpin = new QSpinBox(docGroup);
+    baseSpin->setRange(0, 30000);
+    baseSpin->setSingleStep(500);
+    baseSpin->setValue(AppConfig::instance().docRetryBaseMs());
+    baseSpin->setMinimumHeight(inputH);
+    QObject::connect(baseSpin, &QSpinBox::valueChanged, baseSpin, [](int v) {
+        AppConfig::instance().setDocRetryBaseMs(v);
+    });
+    docForm->addRow("重试基础间隔(ms)", baseSpin);
+
+    QSpinBox* intervalSpin = new QSpinBox(docGroup);
+    intervalSpin->setRange(0, 10000);
+    intervalSpin->setSingleStep(100);
+    intervalSpin->setValue(AppConfig::instance().docMinIntervalMs());
+    intervalSpin->setMinimumHeight(inputH);
+    QObject::connect(intervalSpin, &QSpinBox::valueChanged, intervalSpin, [](int v) {
+        AppConfig::instance().setDocMinIntervalMs(v);
+    });
+    docForm->addRow("请求最小间隔(ms)", intervalSpin);
+
+    QLabel* intervalHint = new QLabel("0=不限；百度标准版建议 1100", docGroup);
+    intervalHint->setWordWrap(true);
+    docForm->addRow(intervalHint);
+
+    QCheckBox* resumeCheck = new QCheckBox("启用断点续传（失败/取消后可继续）", docGroup);
+    resumeCheck->setChecked(AppConfig::instance().resumeEnabled());
+    QObject::connect(resumeCheck, &QCheckBox::toggled, resumeCheck, [](bool on) {
+        AppConfig::instance().setResumeEnabled(on);
+    });
+    docForm->addRow(resumeCheck);
+
+    lay->addWidget(docGroup);
+
     lay->addStretch();
-    return page;
+
+    // 内容较多：改为上下滚动模式
+    QScrollArea* scroll = new QScrollArea;
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->viewport()->setAutoFillBackground(false);   // 避免 viewport 用默认白底盖住对话框背景
+    page->setAutoFillBackground(false);
+    scroll->setWidget(page);
+    return scroll;
 }
 
 QWidget* SettingsDialog::createPluginPage()

@@ -1,4 +1,4 @@
-﻿#ifndef SCREENTRANSLATOR_H
+#ifndef SCREENTRANSLATOR_H
 #define SCREENTRANSLATOR_H
 
 #include <QWidget>
@@ -17,6 +17,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QPointer>
 #include <tesseract/baseapi.h>
 #include <leptonica/allheaders.h>
 #include <opencv2/opencv.hpp>
@@ -54,8 +55,8 @@ private slots:
     void copyAllRecords();
     void exportRecords();
     void importDocument();
-    void onTranslationFinished(const QString& translatedText, const QString& detectedLang);
-    void onTranslationError(const QString& errorMessage);
+    void onTranslationFinished(const QString& translatedText, const QString& detectedLang, quint64 requestId);
+    void onTranslationError(const QString& errorMessage, quint64 requestId);
     void showLanguageDialog();
     void openSettings();
 
@@ -125,8 +126,8 @@ private:
     // 最近一条译文（用于"朗读最近一条"）
     QString m_lastTranslated;
 
-    // 文档导入翻译状态
-    QProgressDialog* m_docProgress = nullptr;
+    // 文档导入翻译状态（QPointer：对象被销毁时自动置空，避免悬垂指针崩溃）
+    QPointer<QProgressDialog> m_docProgress;
     QString m_docOutputPath;
     bool m_docTranslating = false;
 

@@ -113,9 +113,23 @@ QByteArray buildZip(const QList<ZipEntry>& entries)
     return out;
 }
 
+// 去除 XML 1.0 不允许的控制字符（0x09/0x0A/0x0D 除外），否则 docx 可能无法被解析。
+QString stripControlChars(const QString& s)
+{
+    QString out;
+    out.reserve(s.size());
+    for (const QChar c : s) {
+        const ushort u = c.unicode();
+        if (u < 0x20 && u != 0x09 && u != 0x0A && u != 0x0D)
+            continue;
+        out.append(c);
+    }
+    return out;
+}
+
 QString escapeXml(const QString& s)
 {
-    QString out = s;
+    QString out = stripControlChars(s);
     out.replace("&", "&amp;");
     out.replace("<", "&lt;");
     out.replace(">", "&gt;");
@@ -194,6 +208,21 @@ QString buildStyledDocumentXml(const Document& doc)
            "<w:body>" + body + "</w:body></w:document>";
 }
 
+// 定义 Normal / Title / Heading1-6 样式，使 document.xml 里的 w:pStyle 引用有效，
+// 否则 Word 不会按标题样式渲染（此前包内缺 styles.xml，标题全部显示为正文）。
+const char* kStylesXml = R"(<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:eastAsia="SimSun" w:hAnsi="Calibri"/><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr/></w:pPrDefault></w:docDefaults>
+<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>
+<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:pPr><w:jc w:val="center"/><w:spacing w:after="240"/></w:pPr><w:rPr><w:b/><w:sz w:val="32"/></w:rPr><w:qFormat/></w:style>
+<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="240" w:after="120"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/></w:rPr><w:qFormat/></w:style>
+<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="200" w:after="100"/></w:pPr><w:rPr><w:b/><w:sz w:val="26"/></w:rPr><w:qFormat/></w:style>
+<w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="160" w:after="80"/></w:pPr><w:rPr><w:b/><w:sz w:val="24"/></w:rPr><w:qFormat/></w:style>
+<w:style w:type="paragraph" w:styleId="Heading4"><w:name w:val="heading 4"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="120" w:after="60"/></w:pPr><w:rPr><w:b/><w:sz w:val="23"/></w:rPr><w:qFormat/></w:style>
+<w:style w:type="paragraph" w:styleId="Heading5"><w:name w:val="heading 5"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="100" w:after="60"/></w:pPr><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:qFormat/></w:style>
+<w:style w:type="paragraph" w:styleId="Heading6"><w:name w:val="heading 6"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:keepNext/><w:spacing w:before="100" w:after="60"/></w:pPr><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:qFormat/></w:style>
+</w:styles>)";
+
 // 将给定的 document.xml 打包为完整 .docx 并写入磁盘
 bool writeDocxFromDocumentXml(const QString& filePath, const QString& documentXml)
 {
@@ -207,6 +236,7 @@ bool writeDocxFromDocumentXml(const QString& filePath, const QString& documentXm
         "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>"
         "<Default Extension=\"xml\" ContentType=\"application/xml\"/>"
         "<Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>"
+        "<Override PartName=\"/word/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml\"/>"
         "</Types>";
     files.append(contentTypes);
 
@@ -223,6 +253,20 @@ bool writeDocxFromDocumentXml(const QString& filePath, const QString& documentXm
     document.name = "word/document.xml";
     document.data = documentXml.toUtf8();
     files.append(document);
+
+    ZipEntry styles;
+    styles.name = "word/styles.xml";
+    styles.data = QByteArray(kStylesXml);
+    files.append(styles);
+
+    ZipEntry documentRels;
+    documentRels.name = "word/_rels/document.xml.rels";
+    documentRels.data =
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>"
+        "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+        "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>"
+        "</Relationships>";
+    files.append(documentRels);
 
     QFile file(filePath);
     if (!file.open(QIODevice::WriteOnly))
